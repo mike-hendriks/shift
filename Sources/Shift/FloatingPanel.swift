@@ -1,4 +1,5 @@
 import AppKit
+import QuickLookUI
 import SwiftUI
 
 /// Borderless, always-on-top panel that never steals focus from the app you are working in.
@@ -6,6 +7,8 @@ final class FloatingPanel: NSPanel {
     var onKeyDown: ((NSEvent) -> Bool)?
     /// Keep the top edge in place when SwiftUI content grows or shrinks.
     var keepsTopAnchored = true
+    /// Lets this panel drive the Quick Look panel while it is key.
+    weak var previewController: ShelfQuickLook?
 
     init<Content: View>(rootView: Content) {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
@@ -35,6 +38,17 @@ final class FloatingPanel: NSPanel {
             rect.origin.y = frame.maxY - rect.height
         }
         super.setFrame(clampedToScreen(rect), display: flag)
+    }
+
+    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { previewController != nil }
+
+    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        previewController?.preparePanel(panel)
+    }
+
+    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        panel.dataSource = nil
+        panel.delegate = nil
     }
 
     override func keyDown(with event: NSEvent) {

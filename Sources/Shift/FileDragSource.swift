@@ -7,23 +7,25 @@ import SwiftUI
 struct FileDragSource: NSViewRepresentable {
     let urls: [URL]
     var onDragChanged: (Bool) -> Void = { _ in }
+    var onClick: () -> Void = {}
 
     func makeNSView(context: Context) -> DragSourceView {
         let view = DragSourceView()
-        view.urls = urls
-        view.onDragChanged = onDragChanged
+        updateNSView(view, context: context)
         return view
     }
 
     func updateNSView(_ view: DragSourceView, context: Context) {
         view.urls = urls
         view.onDragChanged = onDragChanged
+        view.onClick = onClick
     }
 }
 
 final class DragSourceView: NSView, NSDraggingSource {
     var urls: [URL] = []
     var onDragChanged: (Bool) -> Void = { _ in }
+    var onClick: () -> Void = {}
     private var mouseDownEvent: NSEvent?
 
     override var mouseDownCanMoveWindow: Bool { false }
@@ -35,6 +37,9 @@ final class DragSourceView: NSView, NSDraggingSource {
 
     override func mouseDown(with event: NSEvent) {
         mouseDownEvent = event
+        // Take keyboard focus so Space and the arrow keys reach the shelf.
+        window?.makeKey()
+        onClick()
         if event.clickCount == 2, urls.count == 1 { NSWorkspace.shared.open(urls[0]) }
     }
 

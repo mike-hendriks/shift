@@ -1,4 +1,5 @@
 import AppKit
+import QuickLookUI
 import ShiftCore
 
 /// Development aid: `SHIFT_SNAPSHOT=<dir> SHIFT_FILES=<a:b:c> Shift` renders each panel state to PNG and quits.
@@ -38,9 +39,29 @@ enum DebugSnapshot {
             drop.hide()
             try? await Task.sleep(for: .milliseconds(1500))
             capture(title: "shelf", to: dir)
+
+            // Press Space on the shelf, then Down, and report what Quick Look shows.
+            if let shelfPanel = NSApp.windows.compactMap({ $0 as? FloatingPanel }).first(where: { $0.previewController != nil }) {
+                store.selection = store.items.first?.id
+                shelfPanel.keyDown(with: key(49, " ", in: shelfPanel))
+                try? await Task.sleep(for: .milliseconds(1500))
+                let preview = QLPreviewPanel.shared()!
+                print("quick look visible: \(preview.isVisible), item: \((preview.currentPreviewItem as? URL)?.lastPathComponent ?? "-")")
+                shelfPanel.keyDown(with: key(125, "", in: shelfPanel))
+                try? await Task.sleep(for: .milliseconds(800))
+                print("after down: \((preview.currentPreviewItem as? URL)?.lastPathComponent ?? "-"), selection index \(store.selectedIndex ?? -1)")
+                shelfPanel.keyDown(with: key(49, " ", in: shelfPanel))
+                try? await Task.sleep(for: .milliseconds(800))
+                print("after second space visible: \(preview.isVisible)")
+            }
             NSApp.terminate(nil)
         }
         return true
+    }
+
+    private static func key(_ code: UInt16, _ characters: String, in window: NSWindow) -> NSEvent {
+        NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                         context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code)!
     }
 
     private static func capture(title: String, to dir: URL) {

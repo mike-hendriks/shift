@@ -11,6 +11,7 @@ Results stay in a floating shelf, ready to drag into the next tool.
 3. Slide onto a tile and let go: it runs right away. Let go on "Op de shelf" to park the files as they are.
    Let go anywhere else on the bar and it stays open: click a tile or press 1-9 (Return runs the first).
 4. Results land in the shelf (top right). Drag them out into Figma, a CMS, Slack, Mail, anything. Double-click opens, the copy button puts the file (and image data) on the clipboard.
+   Click a row to select it, then **Space** opens Quick Look, the arrow keys move through the shelf, Delete takes the file off the shelf and ⌘C copies it.
 
 No Accessibility or Input Monitoring permission needed: Shift polls mouse, modifier and drag-pasteboard state.
 

@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import QuickLookUI
 import ShiftCore
 import SwiftUI
 
@@ -16,6 +17,18 @@ final class ShelfStore: ObservableObject {
     @Published private(set) var items: [ShelfItem] = []
     @Published private(set) var fresh: Set<UUID> = []
     @Published var collapsed = false
+    /// The row you clicked, like a Finder selection: Space previews it, arrows move it.
+    @Published var selection: UUID?
+    /// The row under the mouse, previewed when nothing is selected.
+    @Published var hovered: UUID?
+
+    var selectedIndex: Int? { items.firstIndex { $0.id == selection } }
+
+    func moveSelection(by delta: Int) {
+        guard !items.isEmpty else { return }
+        let current = selectedIndex ?? (delta > 0 ? -1 : items.count)
+        selection = items[min(max(current + delta, 0), items.count - 1)].id
+    }
 
     func add(_ results: [ShiftResult]) {
         insert(results.map { ShelfItem(url: $0.output, sourceBytes: $0.sourceBytes, outputBytes: $0.outputBytes, note: $0.note) })
@@ -39,8 +52,19 @@ final class ShelfStore: ObservableObject {
         }
     }
 
-    func remove(_ item: ShelfItem) { items.removeAll { $0.id == item.id } }
-    func clear() { items.removeAll() }
+    func remove(_ item: ShelfItem) {
+        guard let index = items.firstIndex(of: item) else { return }
+        items.remove(at: index)
+        if selection == item.id {
+            selection = items.isEmpty ? nil : items[min(index, items.count - 1)].id
+        }
+    }
+
+    func clear() {
+        items.removeAll()
+        selection = nil
+        hovered = nil
+    }
 }
 
 /// Puts files on the clipboard. A single image also goes on as image data, so it pastes into Figma, Slack or Mail.
@@ -67,6 +91,7 @@ func copyToPasteboard(_ urls: [URL]) {
 final class ShelfController {
     let store: ShelfStore
     private var panel: FloatingPanel!
+    private var quickLook: ShelfQuickLook!
     private var cancellables: Set<AnyCancellable> = []
     private var hasBeenPlaced = false
     private var showingHint = false
@@ -75,6 +100,14 @@ final class ShelfController {
         self.store = store
         panel = FloatingPanel(rootView: ShelfView(store: store, onDragChanged: onDragChanged, onClose: { [weak self] in self?.close() }))
         panel.isMovableByWindowBackground = true
+        quickLook = ShelfQuickLook(store: store)
+        panel.previewController = quickLook
+        panel.onKeyDown = { [weak self] in self?.handleKey($0) ?? false }
+
+        store.$selection
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.quickLook.selectionChanged() }
+            .store(in: &cancellables)
 
         store.$items
             .receive(on: RunLoop.main)
@@ -95,6 +128,45 @@ final class ShelfController {
             hasBeenPlaced = true
         }
         panel.orderFrontRegardless()
+    }
+
+    /// Space toggles Quick Look, arrows move the selection, Delete takes it off the shelf, ⌘C copies it.
+    private func handleKey(_ event: NSEvent) -> Bool {
+        switch event.keyCode {
+        case 49: togglePreview(); return true                       // Space
+        case 125: store.moveSelection(by: 1); return true            // Down
+        case 126: store.moveSelection(by: -1); return true           // Up
+        case 51, 117:                                                // Delete, Forward Delete
+            if let index = store.selectedIndex { store.remove(store.items[index]) }
+            return true
+        case 53:                                                     // Esc
+            if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible {
+                QLPreviewPanel.shared().orderOut(nil)
+            } else {
+                store.selection = nil
+            }
+            return true
+        default:
+            if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "c", let index = store.selectedIndex {
+                copyToPasteboard([store.items[index].url])
+                return true
+            }
+            return false
+        }
+    }
+
+    private func togglePreview() {
+        let preview = QLPreviewPanel.shared()!
+        if QLPreviewPanel.sharedPreviewPanelExists(), preview.isVisible {
+            preview.orderOut(nil)
+            return
+        }
+        if store.selection == nil { store.selection = store.hovered ?? store.items.first?.id }
+        guard store.selection != nil else { return }
+        // Quick Look looks for its controller in the key window's responder chain, so the shelf must be key.
+        NSApp.activate()
+        panel.makeKey()
+        preview.makeKeyAndOrderFront(nil)
     }
 
     private func close() {
@@ -118,14 +190,20 @@ struct ShelfView: View {
                 if store.items.isEmpty {
                     emptyState
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 2) {
-                            ForEach(store.items) { item in
-                                ShelfRow(item: item, isFresh: store.fresh.contains(item.id), store: store, onDragChanged: onDragChanged)
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(spacing: 2) {
+                                ForEach(store.items) { item in
+                                    ShelfRow(item: item, isFresh: store.fresh.contains(item.id), store: store, onDragChanged: onDragChanged)
+                                        .id(item.id)
+                                }
                             }
+                            .padding(.horizontal, 6)
+                            .padding(.bottom, 6)
                         }
-                        .padding(.horizontal, 6)
-                        .padding(.bottom, 6)
+                        .onChange(of: store.selection) { _, selection in
+                            if let selection { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(selection) } }
+                        }
                     }
                     .frame(height: min(CGFloat(store.items.count) * 56 + 6, 460))
                     .scrollIndicators(.never)
@@ -206,8 +284,8 @@ struct ShelfRow: View {
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
-            .overlay(FileDragSource(urls: [item.url], onDragChanged: onDragChanged))
-            .help("Sleep naar een app, dubbelklik om te openen")
+            .overlay(FileDragSource(urls: [item.url], onDragChanged: onDragChanged, onClick: { store.selection = item.id }))
+            .help("Sleep naar een app, spatie voor voorvertoning, dubbelklik om te openen")
 
             if hovering {
                 HStack(spacing: 2) {
@@ -222,9 +300,14 @@ struct ShelfRow: View {
         .frame(height: 54)
         .background(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(isFresh ? Color.accentColor.opacity(0.18) : hovering ? Color.primary.opacity(0.06) : .clear)
+                .fill(store.selection == item.id ? Color.accentColor.opacity(0.28)
+                      : isFresh ? Color.accentColor.opacity(0.18)
+                      : hovering ? Color.primary.opacity(0.06) : .clear)
         )
-        .onHover { hovering = $0 }
+        .onHover { inside in
+            hovering = inside
+            if inside { store.hovered = item.id } else if store.hovered == item.id { store.hovered = nil }
+        }
         .animation(.easeOut(duration: 0.12), value: hovering)
     }
 
@@ -288,5 +371,44 @@ struct IconButton: View {
         .foregroundStyle(.secondary)
         .onHover { hovering = $0 }
         .help(help)
+    }
+}
+
+/// Feeds the shelf to Quick Look and keeps its current item in sync with the shelf selection.
+@MainActor
+final class ShelfQuickLook: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
+    private let store: ShelfStore
+
+    init(store: ShelfStore) { self.store = store }
+
+    func selectionChanged() {
+        guard QLPreviewPanel.sharedPreviewPanelExists(), let panel = QLPreviewPanel.shared(),
+              panel.isVisible, panel.dataSource === self, let index = store.selectedIndex,
+              panel.currentPreviewItemIndex != index else { return }
+        panel.currentPreviewItemIndex = index
+    }
+
+    func preparePanel(_ panel: QLPreviewPanel) {
+        panel.dataSource = self
+        panel.delegate = self
+        panel.reloadData()
+        panel.currentPreviewItemIndex = store.selectedIndex ?? 0
+    }
+
+    nonisolated func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
+        MainActor.assumeIsolated { store.items.count }
+    }
+
+    nonisolated func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> (any QLPreviewItem)! {
+        MainActor.assumeIsolated { store.items.indices.contains(index) ? store.items[index].url as NSURL : nil }
+    }
+
+    /// Arrow keys inside the preview move through the shelf, as in Finder.
+    nonisolated func previewPanel(_ panel: QLPreviewPanel!, handle event: NSEvent!) -> Bool {
+        guard event.type == .keyDown else { return false }
+        let delta: Int? = [125: 1, 124: 1, 126: -1, 123: -1][event.keyCode]
+        guard let delta else { return false }
+        MainActor.assumeIsolated { store.moveSelection(by: delta) }
+        return true
     }
 }
