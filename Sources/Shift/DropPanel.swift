@@ -2,6 +2,12 @@ import AppKit
 import ShiftCore
 import SwiftUI
 
+/// A place in the picker you can drop files on.
+enum DropSpot: Hashable {
+    case action(Int)
+    case park
+}
+
 @MainActor
 final class DropModel: ObservableObject {
     enum Phase: Equatable { case waiting, choosing, working, failed }
@@ -14,6 +20,15 @@ final class DropModel: ObservableObject {
     @Published var done = 0
     @Published var total = 0
     @Published var failures: [String] = []
+    /// True while files are being dragged over the picker: letting go runs the action under the cursor.
+    @Published var isDragging = false
+    @Published var dropSpot: DropSpot?
+    /// Frames of the drop spots in the panel's top-left based coordinates, reported by the views.
+    var spotFrames: [DropSpot: CGRect] = [:]
+
+    func spot(at point: CGPoint) -> DropSpot? {
+        spotFrames.first { $0.value.contains(point) }?.key
+    }
 
     /// Actions in display order, used for the 1–9 shortcuts.
     var numbered: [(action: ShiftAction, files: [URL])] {
@@ -33,6 +48,7 @@ final class DropController {
     private var panel: FloatingPanel!
     private var dropTarget: DropTargetView!
     private var clickMonitor: Any?
+    private var pendingSpot: DropSpot?
 
     init(shelf: ShelfStore, outputDirectory: @escaping () -> URL) {
         self.shelf = shelf
@@ -43,8 +59,22 @@ final class DropController {
         let content = panel.contentView!
         dropTarget = DropTargetView(frame: content.bounds)
         dropTarget.autoresizingMask = [.width, .height]
-        dropTarget.onTargetChanged = { [weak self] in self?.model.isTargeted = $0 }
-        dropTarget.onDrop = { [weak self] urls in self?.present(urls) }
+        dropTarget.onEnter = { [weak self] urls in self?.dragEntered(urls) }
+        dropTarget.onMove = { [weak self] point in
+            guard let self, self.model.isDragging else { return }
+            let spot = self.model.spot(at: point)
+            if spot != self.model.dropSpot { self.model.dropSpot = spot }
+        }
+        dropTarget.onExit = { [weak self] in
+            self?.model.isTargeted = false
+            self?.model.dropSpot = nil
+        }
+        dropTarget.onWillDrop = { [weak self] in
+            guard let self else { return }
+            self.pendingSpot = self.model.isDragging ? self.model.dropSpot : nil
+            self.model.isDragging = false
+        }
+        dropTarget.onDrop = { [weak self] urls in self?.dropped(urls) }
         content.addSubview(dropTarget)
 
         // Close the picker when you click in another app. Not on resign-key: after a drop the source app
@@ -72,7 +102,49 @@ final class DropController {
         // The drop callback can land just after the mouse-up we polled.
         Task {
             try? await Task.sleep(for: .milliseconds(350))
-            if model.phase == .waiting { hide() }
+            if model.phase == .waiting || model.isDragging { hide() }
+        }
+    }
+
+    /// Files entered the drop zone: open the picker right away, with its header under the cursor,
+    /// so you can slide onto an action and let go there.
+    private func dragEntered(_ urls: [URL]) {
+        guard model.phase == .waiting || model.isDragging else { return }
+        model.isTargeted = true
+        guard model.phase == .waiting, !urls.isEmpty else { return }
+        model.isDragging = true
+        model.dropSpot = nil
+        model.files = urls
+        model.groups = Suggestions.groups(for: urls).filter { !$0.actions.isEmpty }
+        model.phase = .choosing
+        dropTarget.superview?.addSubview(dropTarget, positioned: .above, relativeTo: nil)
+
+        // The panel grows downward from its top edge once SwiftUI lays out the picker.
+        let mouse = NSEvent.mouseLocation
+        let frame = panel.frame
+        panel.setFrame(NSRect(x: mouse.x - 180, y: mouse.y + 34 - frame.height, width: frame.width, height: frame.height),
+                       display: true)
+    }
+
+    private func dropped(_ urls: [URL]) {
+        let spot = pendingSpot
+        pendingSpot = nil
+        model.dropSpot = nil
+        model.isTargeted = false
+        let files = urls.filter(\.isFileURL)
+        guard !files.isEmpty else { hide(); return }
+        log.notice("Dropped \(files.count) files on \(String(describing: spot), privacy: .public)")
+
+        switch spot {
+        case .action(let index)? where index < model.numbered.count:
+            dropTarget.isHidden = true
+            let action = model.numbered[index].action
+            let matching = files.filter { FileKind.of($0) == action.kind }
+            if matching.isEmpty { present(files) } else { perform(action, on: matching) }
+        case .park?:
+            park(files)
+        default:
+            present(files)
         }
     }
 
@@ -124,6 +196,8 @@ final class DropController {
     func hide() {
         panel.orderOut(nil)
         model.phase = .waiting
+        model.isDragging = false
+        model.dropSpot = nil
         model.files = []
         model.groups = []
         model.failures = []
@@ -167,6 +241,8 @@ struct DropView: View {
             }
         }
         .panelBackground(cornerRadius: 22)
+        .coordinateSpace(.named(DropSpotFramesKey.space))
+        .onPreferenceChange(DropSpotFramesKey.self) { model.spotFrames = $0 }
         .animation(.snappy(duration: 0.22), value: model.phase)
     }
 
@@ -286,15 +362,19 @@ struct ActionPicker: View {
         let rest = group.actions.filter { $0 != primary }
 
         if let primary {
-            PrimaryActionButton(action: primary, index: model.index(of: primary, in: group)) {
+            let index = model.index(of: primary, in: group)
+            PrimaryActionButton(action: primary, index: index, highlighted: index.map { model.dropSpot == .action($0) } ?? false) {
                 controller.perform(primary, on: group.files)
             }
+            .dropSpot(index.map(DropSpot.action))
         }
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
             ForEach(rest) { action in
-                ActionButton(action: action, index: model.index(of: action, in: group)) {
+                let index = model.index(of: action, in: group)
+                ActionButton(action: action, index: index, highlighted: index.map { model.dropSpot == .action($0) } ?? false) {
                     controller.perform(action, on: group.files)
                 }
+                .dropSpot(index.map(DropSpot.action))
             }
         }
     }
@@ -305,12 +385,17 @@ struct ActionPicker: View {
                 controller.park(model.files)
             } label: {
                 Label("Op de shelf zetten", systemImage: "tray.and.arrow.down")
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(model.dropSpot == .park ? Color.accentColor.opacity(0.2) : .clear))
             }
             .buttonStyle(.plain)
             .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(model.dropSpot == .park ? Color.accentColor : .secondary)
+            .dropSpot(.park)
+            .padding(.leading, -8)
             Spacer()
-            Text("1–9 kiezen · Esc sluiten")
+            Text(model.isDragging ? "Laat los op een actie" : "1–9 kiezen · Esc sluiten")
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
         }
@@ -320,6 +405,7 @@ struct ActionPicker: View {
 struct PrimaryActionButton: View {
     let action: ShiftAction
     let index: Int?
+    var highlighted = false
     let perform: () -> Void
     @State private var hovering = false
 
@@ -342,8 +428,14 @@ struct PrimaryActionButton: View {
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color.accentColor.gradient)
-                    .brightness(hovering ? 0.06 : 0)
+                    .brightness(hovering || highlighted ? 0.08 : 0)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(.white.opacity(highlighted ? 0.7 : 0), lineWidth: 2)
+            )
+            .scaleEffect(highlighted ? 1.02 : 1)
+            .animation(.snappy(duration: 0.15), value: highlighted)
             .contentShape(RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(.plain)
@@ -354,6 +446,7 @@ struct PrimaryActionButton: View {
 struct ActionButton: View {
     let action: ShiftAction
     let index: Int?
+    var highlighted = false
     let perform: () -> Void
     @State private var hovering = false
 
@@ -372,8 +465,14 @@ struct ActionButton: View {
             .frame(height: 34)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.primary.opacity(hovering ? 0.12 : 0.06))
+                    .fill(highlighted ? Color.accentColor.opacity(0.22) : Color.primary.opacity(hovering ? 0.12 : 0.06))
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(highlighted ? 0.9 : 0), lineWidth: 1.5)
+            )
+            .scaleEffect(highlighted ? 1.03 : 1)
+            .animation(.snappy(duration: 0.15), value: highlighted)
             .contentShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
@@ -392,5 +491,24 @@ struct KeyCap: View {
             .frame(width: 17, height: 17)
             .background(RoundedRectangle(cornerRadius: 4).fill(inverted ? Color.white.opacity(0.22) : Color.primary.opacity(0.08)))
             .foregroundStyle(inverted ? Color.white : Color.secondary)
+    }
+}
+
+/// Collects the frames of drop spots so the AppKit drop target can tell what is under the cursor.
+struct DropSpotFramesKey: PreferenceKey {
+    static let space = "dropPanel"
+    static let defaultValue: [DropSpot: CGRect] = [:]
+
+    static func reduce(value: inout [DropSpot: CGRect], nextValue: () -> [DropSpot: CGRect]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+extension View {
+    func dropSpot(_ spot: DropSpot?) -> some View {
+        background(GeometryReader { geometry in
+            Color.clear.preference(key: DropSpotFramesKey.self,
+                                   value: spot.map { [$0: geometry.frame(in: .named(DropSpotFramesKey.space))] } ?? [:])
+        })
     }
 }

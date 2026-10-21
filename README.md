@@ -7,7 +7,8 @@ Results stay in a floating shelf, ready to drag into the next tool.
 
 1. Drag one or more files anywhere (Finder, desktop, any app that drags real files).
 2. Hold **Shift** while dragging. A drop zone appears under your cursor.
-3. Let go. Shift suggests actions based on what you dropped. Click one, or press 1-9 (Return runs the first).
+3. Move onto it and it unfolds into actions suggested for what you are dragging. Slide onto an action and let go: it runs right away.
+   Let go on the header instead and the picker stays open: click an action or press 1-9 (Return runs the first).
 4. Results land in the shelf (top right). Drag them out into Figma, a CMS, Slack, Mail, anything. Double-click opens, the copy button puts the file (and image data) on the clipboard.
 
 No Accessibility or Input Monitoring permission needed: Shift polls mouse, modifier and drag-pasteboard state.

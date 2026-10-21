@@ -21,6 +21,21 @@ enum DebugSnapshot {
             try? await Task.sleep(for: .milliseconds(1200))
             capture(title: "picker", to: dir)
 
+            // Simulate dragging over the third action and check hit-testing lands on it.
+            drop.model.isDragging = true
+            for (spot, frame) in drop.model.spotFrames.sorted(by: { $0.value.minY < $1.value.minY }) {
+                print("spot \(spot): \(frame)")
+            }
+            if let frame = drop.model.spotFrames[.action(2)] {
+                let hit = drop.model.spot(at: CGPoint(x: frame.midX, y: frame.midY))
+                print("hit test at action 2 centre -> \(String(describing: hit))")
+                drop.model.dropSpot = hit
+            }
+            try? await Task.sleep(for: .milliseconds(600))
+            capture(title: "picker-hover", to: dir)
+            drop.model.isDragging = false
+            drop.model.dropSpot = nil
+
             let report = await Processor.run(.webPreset, on: files.filter { FileKind.of($0) == .image },
                                              outputDirectory: FileManager.default.temporaryDirectory.appendingPathComponent("shift-snapshot"))
             store.add(report.results)
