@@ -2,7 +2,7 @@ import AppKit
 import ShiftCore
 import SwiftUI
 
-/// A place in the picker you can drop files on.
+/// A place in the bar you can drop files on.
 enum DropSpot: Hashable {
     case action(Int)
     case park
@@ -10,9 +10,9 @@ enum DropSpot: Hashable {
 
 @MainActor
 final class DropModel: ObservableObject {
-    enum Phase: Equatable { case waiting, choosing, working, failed }
+    enum Phase: Equatable { case hidden, choosing, working, failed }
 
-    @Published var phase: Phase = .waiting
+    @Published var phase: Phase = .hidden
     @Published var isTargeted = false
     @Published var files: [URL] = []
     @Published var groups: [ActionGroup] = []
@@ -20,9 +20,11 @@ final class DropModel: ObservableObject {
     @Published var done = 0
     @Published var total = 0
     @Published var failures: [String] = []
-    /// True while files are being dragged over the picker: letting go runs the action under the cursor.
+    /// True while files are being dragged: letting go on a tile runs that action.
     @Published var isDragging = false
     @Published var dropSpot: DropSpot?
+    /// Width of the bar, the full width of the screen it appears on.
+    @Published var width: CGFloat = 1200
     /// Frames of the drop spots in the panel's top-left based coordinates, reported by the views.
     var spotFrames: [DropSpot: CGRect] = [:]
 
@@ -40,6 +42,7 @@ final class DropModel: ObservableObject {
     }
 }
 
+/// The action bar: slides in across the top of the screen while you drag with Shift held.
 @MainActor
 final class DropController {
     let model = DropModel()
@@ -49,17 +52,18 @@ final class DropController {
     private var dropTarget: DropTargetView!
     private var clickMonitor: Any?
     private var pendingSpot: DropSpot?
+    private var isHiding = false
 
     init(shelf: ShelfStore, outputDirectory: @escaping () -> URL) {
         self.shelf = shelf
         self.outputDirectory = outputDirectory
-        panel = FloatingPanel(rootView: DropView(model: model, controller: self))
+        panel = FloatingPanel(rootView: DropBar(model: model, controller: self))
         panel.onKeyDown = { [weak self] in self?.handleKey($0) ?? false }
 
         let content = panel.contentView!
         dropTarget = DropTargetView(frame: content.bounds)
         dropTarget.autoresizingMask = [.width, .height]
-        dropTarget.onEnter = { [weak self] urls in self?.dragEntered(urls) }
+        dropTarget.onEnter = { [weak self] _ in self?.model.isTargeted = true }
         dropTarget.onMove = { [weak self] point in
             guard let self, self.model.isDragging else { return }
             let spot = self.model.spot(at: point)
@@ -77,53 +81,82 @@ final class DropController {
         dropTarget.onDrop = { [weak self] urls in self?.dropped(urls) }
         content.addSubview(dropTarget)
 
-        // Close the picker when you click in another app. Not on resign-key: after a drop the source app
-        // takes focus back, which would close the picker the moment it opens.
+        // Close the bar when you click in another app. Not on resign-key: after a drop the source app
+        // takes focus back, which would close the bar the moment it opens.
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.model.phase == .choosing || self.model.phase == .failed else { return }
+                guard let self, !self.model.isDragging,
+                      self.model.phase == .choosing || self.model.phase == .failed else { return }
                 self.hide()
             }
         }
     }
 
-    /// Shows the drop target centred under the cursor, so you can let go right away.
-    func showDropZone(at point: NSPoint) {
+    /// Shift was pressed during a file drag: show the actions for what is being dragged.
+    func showForDrag() {
         guard model.phase != .working else { return }
-        model.phase = .waiting
-        model.isTargeted = false
-        dropTarget.isHidden = false
-        place(centeredAt: point, size: CGSize(width: 200, height: 140))
-        panel.orderFrontRegardless()
-        log.notice("Drop zone shown")
+        let files = DropTargetView.previewURLs(NSPasteboard(name: .drag))
+        guard !files.isEmpty else { return }
+        log.notice("Bar shown for a drag of \(files.count) files")
+        show(files, dragging: true)
     }
 
     func dragEnded() {
         // The drop callback can land just after the mouse-up we polled.
         Task {
             try? await Task.sleep(for: .milliseconds(350))
-            if model.phase == .waiting || model.isDragging { hide() }
+            if model.isDragging { hide() }
         }
     }
 
-    /// Files entered the drop zone: open the picker right away, with its header under the cursor,
-    /// so you can slide onto an action and let go there.
-    private func dragEntered(_ urls: [URL]) {
-        guard model.phase == .waiting || model.isDragging else { return }
-        model.isTargeted = true
-        guard model.phase == .waiting, !urls.isEmpty else { return }
-        model.isDragging = true
-        model.dropSpot = nil
-        model.files = urls
-        model.groups = Suggestions.groups(for: urls).filter { !$0.actions.isEmpty }
+    /// Opens the bar for files to click through, e.g. from the menu bar or a drop next to the tiles.
+    func present(_ urls: [URL], dragging: Bool = false) {
+        let files = urls.filter(\.isFileURL)
+        guard !files.isEmpty else { hide(); return }
+        show(files, dragging: dragging)
+        guard !dragging else { return }
+        panel.makeKeyAndOrderFront(nil)
+        // The drag source app grabs focus back when a drop ends; take it again so 1-9 and Esc reach us.
+        Task {
+            try? await Task.sleep(for: .milliseconds(200))
+            if model.phase == .choosing { panel.makeKey() }
+        }
+    }
+
+    private func show(_ files: [URL], dragging: Bool) {
+        model.files = files
+        model.groups = Suggestions.groups(for: files).filter { !$0.actions.isEmpty }
         model.phase = .choosing
+        model.isDragging = dragging
+        model.isTargeted = false
+        model.dropSpot = nil
+        dropTarget.isHidden = !dragging
         dropTarget.superview?.addSubview(dropTarget, positioned: .above, relativeTo: nil)
 
-        // The panel grows downward from its top edge once SwiftUI lays out the picker.
         let mouse = NSEvent.mouseLocation
-        let frame = panel.frame
-        panel.setFrame(NSRect(x: mouse.x - 180, y: mouse.y + 34 - frame.height, width: frame.width, height: frame.height),
-                       display: true)
+        let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
+        guard let visible = screen?.visibleFrame else { return }
+        model.width = visible.width - 24
+
+        // Pin the top edge under the menu bar; the panel then grows downward as SwiftUI lays out the tiles.
+        let height = panel.isVisible ? panel.frame.height : 220
+        let frame = NSRect(x: visible.minX + 12, y: visible.maxY - 8 - height, width: model.width, height: height)
+        if panel.isVisible {
+            isHiding = false
+            panel.setFrame(frame, display: true)
+            panel.animator().alphaValue = 1
+            panel.orderFrontRegardless()
+        } else {
+            panel.setFrame(frame.offsetBy(dx: 0, dy: 24), display: false)
+            panel.alphaValue = 0
+            panel.orderFrontRegardless()
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.2
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                panel.animator().setFrame(frame, display: true)
+                panel.animator().alphaValue = 1
+            }
+        }
     }
 
     private func dropped(_ urls: [URL]) {
@@ -131,13 +164,13 @@ final class DropController {
         pendingSpot = nil
         model.dropSpot = nil
         model.isTargeted = false
+        dropTarget.isHidden = true
         let files = urls.filter(\.isFileURL)
         guard !files.isEmpty else { hide(); return }
         log.notice("Dropped \(files.count) files on \(String(describing: spot), privacy: .public)")
 
         switch spot {
         case .action(let index)? where index < model.numbered.count:
-            dropTarget.isHidden = true
             let action = model.numbered[index].action
             let matching = files.filter { FileKind.of($0) == action.kind }
             if matching.isEmpty { present(files) } else { perform(action, on: matching) }
@@ -148,30 +181,13 @@ final class DropController {
         }
     }
 
-    /// Opens the action picker for files, e.g. from a drop or the menu bar.
-    func present(_ urls: [URL], at point: NSPoint? = nil) {
-        let files = urls.filter(\.isFileURL)
-        log.notice("Presenting \(files.count) files")
-        guard !files.isEmpty else { hide(); return }
-        dropTarget.isHidden = true
-        model.files = files
-        model.groups = Suggestions.groups(for: files).filter { !$0.actions.isEmpty }
-        model.phase = .choosing
-        if let point { place(centeredAt: point) }
-        if !panel.isVisible { place(centeredAt: NSEvent.mouseLocation) }
-        panel.makeKeyAndOrderFront(nil)
-        // The drag source app grabs focus back when the drop ends; take it again so 1-9 and Esc reach us.
-        Task {
-            try? await Task.sleep(for: .milliseconds(200))
-            if model.phase == .choosing { panel.makeKey() }
-        }
-    }
-
     func perform(_ action: ShiftAction, on files: [URL]) {
         model.phase = .working
+        model.isDragging = false
         model.workingTitle = action.title
         model.done = 0
         model.total = files.count
+        dropTarget.isHidden = true
         let directory = outputDirectory()
         Task {
             let report = await Processor.run(action, on: files, outputDirectory: directory) { done, _ in
@@ -194,20 +210,35 @@ final class DropController {
     }
 
     func hide() {
-        panel.orderOut(nil)
-        model.phase = .waiting
         model.isDragging = false
+        model.isTargeted = false
+        model.dropSpot = nil
+        dropTarget.isHidden = true
+        guard panel.isVisible else { reset(); return }
+        // Fade out with the content still in place, then clear it.
+        isHiding = true
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.15
+            panel.animator().alphaValue = 0
+        }, completionHandler: {
+            MainActor.assumeIsolated {
+                // A new drag may have reopened the bar during the fade.
+                guard self.isHiding else { return }
+                self.isHiding = false
+                self.panel.orderOut(nil)
+                self.reset()
+            }
+        })
+    }
+
+    private func reset() {
+        model.phase = .hidden
+        model.isDragging = false
+        model.isTargeted = false
         model.dropSpot = nil
         model.files = []
         model.groups = []
         model.failures = []
-    }
-
-    private func place(centeredAt point: NSPoint, size knownSize: CGSize? = nil) {
-        panel.layoutIfNeeded()
-        let size = knownSize ?? panel.contentViewController?.view.fittingSize ?? CGSize(width: 220, height: 150)
-        let frame = NSRect(x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width, height: size.height)
-        panel.setFrame(frame, display: true)
     }
 
     private func handleKey(_ event: NSEvent) -> Bool {
@@ -227,125 +258,131 @@ final class DropController {
 
 // MARK: Views
 
-struct DropView: View {
+struct DropBar: View {
     @ObservedObject var model: DropModel
     let controller: DropController
 
     var body: some View {
         Group {
             switch model.phase {
-            case .waiting: dropZone
-            case .choosing: ActionPicker(model: model, controller: controller)
+            case .hidden: Color.clear.frame(height: 1)
+            case .choosing: ActionBar(model: model, controller: controller)
             case .working: working
             case .failed: failed
             }
         }
-        .panelBackground(cornerRadius: 22)
+        .frame(width: model.width)
+        .panelBackground(cornerRadius: 26)
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .strokeBorder(Color.accentColor.opacity(model.isTargeted && model.isDragging ? 0.6 : 0), lineWidth: 2)
+        )
         .coordinateSpace(.named(DropSpotFramesKey.space))
         .onPreferenceChange(DropSpotFramesKey.self) { model.spotFrames = $0 }
         .animation(.snappy(duration: 0.22), value: model.phase)
-    }
-
-    private var dropZone: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "shift.fill")
-                .font(.system(size: 34, weight: .bold))
-                .symbolEffect(.bounce, value: model.isTargeted)
-            Text(model.isTargeted ? "Loslaten" : "Sleep hierheen")
-                .font(.system(size: 13, weight: .semibold))
-        }
-        .foregroundStyle(model.isTargeted ? Color.accentColor : Color.primary)
-        .frame(width: 200, height: 140)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [7, 5]))
-                .foregroundStyle(model.isTargeted ? Color.accentColor : Color.secondary.opacity(0.5))
-                .padding(10)
-        )
-        .scaleEffect(model.isTargeted ? 1.04 : 1)
-        .animation(.snappy(duration: 0.18), value: model.isTargeted)
+        .animation(.easeOut(duration: 0.15), value: model.isTargeted)
     }
 
     private var working: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                ProgressView().controlSize(.small)
-                Text("\(model.workingTitle)…").font(.system(size: 13, weight: .semibold))
-                Spacer()
-                Text("\(model.done)/\(model.total)").font(.system(size: 12).monospacedDigit()).foregroundStyle(.secondary)
-            }
+        HStack(spacing: 16) {
+            ProgressView().controlSize(.regular)
+            Text("\(model.workingTitle)…").font(.system(size: 17, weight: .semibold))
             ProgressView(value: Double(model.done), total: Double(max(model.total, 1)))
+            Text("\(model.done)/\(model.total)").font(.system(size: 15).monospacedDigit()).foregroundStyle(.secondary)
         }
-        .padding(18)
-        .frame(width: 300)
+        .padding(.horizontal, 24)
+        .frame(height: 76)
     }
 
     private var failed: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("Niet alles is gelukt", systemImage: "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .semibold))
+        HStack(alignment: .top, spacing: 16) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 22))
                 .foregroundStyle(.orange)
-            ForEach(model.failures, id: \.self) { message in
-                Text(message).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Niet alles is gelukt").font(.system(size: 15, weight: .semibold))
+                ForEach(model.failures, id: \.self) { message in
+                    Text(message).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
             }
-            HStack {
-                Spacer()
-                Button("Sluiten") { controller.hide() }.keyboardShortcut(.defaultAction)
-            }
+            Spacer()
+            Button("Sluiten") { controller.hide() }.keyboardShortcut(.defaultAction).controlSize(.large)
         }
-        .padding(18)
-        .frame(width: 320)
+        .padding(22)
     }
 }
 
-struct ActionPicker: View {
+struct ActionBar: View {
     @ObservedObject var model: DropModel
     let controller: DropController
 
+    private let spacing: CGFloat = 10
+    private let minTileWidth: CGFloat = 140
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             header
             if model.groups.isEmpty {
                 Text("Shift weet nog niet wat het met dit type moet. Zet het op de shelf om het bij de hand te houden.")
-                    .font(.system(size: 12))
+                    .font(.system(size: 14))
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(model.groups) { group in
                 VStack(alignment: .leading, spacing: 8) {
                     if model.groups.count > 1 {
                         Text("\(group.files.count) \(group.kind.label(count: group.files.count))".uppercased())
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
                     }
-                    actions(for: group)
+                    tiles(for: group)
                 }
             }
-            footer
         }
-        .padding(16)
-        .frame(width: 360)
+        .padding(18)
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             ZStack {
                 ForEach(Array(model.files.prefix(3).enumerated().reversed()), id: \.offset) { index, url in
-                    FileThumbnail(url: url, size: 34)
+                    FileThumbnail(url: url, size: 36)
                         .rotationEffect(.degrees(Double(index) * -6))
                         .offset(x: CGFloat(index) * 3)
                 }
             }
-            .frame(width: 42, height: 38)
+            .frame(width: 44, height: 40)
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.system(size: 13, weight: .semibold)).lineLimit(2).truncationMode(.middle)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(formatBytes(model.files.reduce(0) { $0 + fileSize($1) }))
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(title).font(.system(size: 15, weight: .semibold)).lineLimit(1).truncationMode(.middle)
+                let bytes = model.files.reduce(0) { $0 + fileSize($1) }
+                if bytes > 0 {
+                    Text(formatBytes(bytes)).font(.system(size: 12)).foregroundStyle(.secondary)
+                }
             }
-            Spacer()
+            Spacer(minLength: 20)
+            Text(model.isDragging ? "Laat los op een actie" : "Klik of druk 1–9 · Esc sluit")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+            parkButton
             IconButton(symbol: "xmark", help: "Sluiten (Esc)") { controller.hide() }
         }
+    }
+
+    private var parkButton: some View {
+        let highlighted = model.dropSpot == .park
+        return Button {
+            controller.park(model.files)
+        } label: {
+            Label("Op de shelf", systemImage: "tray.and.arrow.down")
+                .font(.system(size: 13, weight: .semibold))
+                .padding(.horizontal, 14)
+                .frame(height: 36)
+                .background(Capsule().fill(highlighted ? Color.accentColor.opacity(0.25) : Color.primary.opacity(0.07)))
+                .overlay(Capsule().strokeBorder(Color.accentColor.opacity(highlighted ? 0.9 : 0), lineWidth: 1.5))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(highlighted ? Color.accentColor : .primary)
+        .dropSpot(.park)
     }
 
     private var title: String {
@@ -356,128 +393,99 @@ struct ActionPicker: View {
         }.joined(separator: ", ")
     }
 
+    /// One column count for the whole bar, so every tile has the same width. The largest group decides:
+    /// as many tiles per row as fit, split into balanced rows when they do not.
+    private var columns: Int {
+        let maxPerRow = max(1, Int((model.width - 36 + spacing) / (minTileWidth + spacing)))
+        let largest = max(1, model.groups.map(\.actions.count).max() ?? 1)
+        let rowCount = Int((Double(largest) / Double(maxPerRow)).rounded(.up))
+        return Int((Double(largest) / Double(rowCount)).rounded(.up))
+    }
+
     @ViewBuilder
-    private func actions(for group: ActionGroup) -> some View {
-        let primary = group.actions.first == .webPreset ? ShiftAction.webPreset : nil
-        let rest = group.actions.filter { $0 != primary }
-
-        if let primary {
-            let index = model.index(of: primary, in: group)
-            PrimaryActionButton(action: primary, index: index, highlighted: index.map { model.dropSpot == .action($0) } ?? false) {
-                controller.perform(primary, on: group.files)
-            }
-            .dropSpot(index.map(DropSpot.action))
+    private func tiles(for group: ActionGroup) -> some View {
+        let perRow = columns
+        let rows = stride(from: 0, to: group.actions.count, by: perRow).map {
+            Array(group.actions[$0..<min($0 + perRow, group.actions.count)])
         }
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
-            ForEach(rest) { action in
-                let index = model.index(of: action, in: group)
-                ActionButton(action: action, index: index, highlighted: index.map { model.dropSpot == .action($0) } ?? false) {
-                    controller.perform(action, on: group.files)
+
+        VStack(spacing: spacing) {
+            ForEach(rows.indices, id: \.self) { rowIndex in
+                HStack(spacing: spacing) {
+                    ForEach(rows[rowIndex]) { action in
+                        let index = model.index(of: action, in: group)
+                        ActionTile(action: action, index: index,
+                                   highlighted: index.map { model.dropSpot == .action($0) } ?? false) {
+                            controller.perform(action, on: group.files)
+                        }
+                        .dropSpot(index.map(DropSpot.action))
+                    }
+                    // Pad short rows so their tiles stay as wide as the rest.
+                    ForEach(0..<(perRow - rows[rowIndex].count), id: \.self) { _ in
+                        Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
+                    }
                 }
-                .dropSpot(index.map(DropSpot.action))
             }
-        }
-    }
-
-    private var footer: some View {
-        HStack {
-            Button {
-                controller.park(model.files)
-            } label: {
-                Label("Op de shelf zetten", systemImage: "tray.and.arrow.down")
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Capsule().fill(model.dropSpot == .park ? Color.accentColor.opacity(0.2) : .clear))
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(model.dropSpot == .park ? Color.accentColor : .secondary)
-            .dropSpot(.park)
-            .padding(.leading, -8)
-            Spacer()
-            Text(model.isDragging ? "Laat los op een actie" : "1–9 kiezen · Esc sluiten")
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
         }
     }
 }
 
-struct PrimaryActionButton: View {
+struct ActionTile: View {
     let action: ShiftAction
     let index: Int?
     var highlighted = false
     let perform: () -> Void
     @State private var hovering = false
 
+    private var isPrimary: Bool { action == .webPreset }
+
     var body: some View {
         Button(action: perform) {
-            HStack(spacing: 12) {
-                Image(systemName: action.symbol)
-                    .font(.system(size: 18, weight: .semibold))
-                    .frame(width: 34, height: 34)
-                    .background(Circle().fill(.white.opacity(0.22)))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(action.title).font(.system(size: 14, weight: .bold))
-                    Text(action.subtitle).font(.system(size: 11)).opacity(0.85)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top) {
+                    Image(systemName: action.symbol)
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(isPrimary ? Color.white : Color.accentColor)
+                    Spacer()
+                    if let index, index < 9 { KeyCap(number: index + 1, inverted: isPrimary) }
                 }
-                Spacer()
-                if let index, index < 9 { KeyCap(number: index + 1, inverted: true) }
+                Spacer(minLength: 10)
+                Text(action.title)
+                    .font(.system(size: 17, weight: .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Text(action.subtitle)
+                    .font(.system(size: 11.5))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .opacity(isPrimary ? 0.85 : 0.6)
+                    .padding(.top, 2)
             }
-            .foregroundStyle(.white)
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.accentColor.gradient)
-                    .brightness(hovering || highlighted ? 0.08 : 0)
-            )
+            .foregroundStyle(isPrimary ? Color.white : Color.primary)
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 124, maxHeight: 124, alignment: .leading)
+            .background(background)
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(.white.opacity(highlighted ? 0.7 : 0), lineWidth: 2)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(isPrimary ? Color.white.opacity(highlighted ? 0.8 : 0) : Color.accentColor.opacity(highlighted ? 0.9 : 0),
+                                  lineWidth: 2.5)
             )
-            .scaleEffect(highlighted ? 1.02 : 1)
+            .scaleEffect(highlighted ? 1.04 : 1)
             .animation(.snappy(duration: 0.15), value: highlighted)
-            .contentShape(RoundedRectangle(cornerRadius: 14))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-    }
-}
-
-struct ActionButton: View {
-    let action: ShiftAction
-    let index: Int?
-    var highlighted = false
-    let perform: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: perform) {
-            HStack(spacing: 8) {
-                Image(systemName: action.symbol)
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 16)
-                    .foregroundStyle(Color.accentColor)
-                Text(action.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                Spacer(minLength: 0)
-                if let index, index < 9 { KeyCap(number: index + 1) }
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 34)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(highlighted ? Color.accentColor.opacity(0.22) : Color.primary.opacity(hovering ? 0.12 : 0.06))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.accentColor.opacity(highlighted ? 0.9 : 0), lineWidth: 1.5)
-            )
-            .scaleEffect(highlighted ? 1.03 : 1)
-            .animation(.snappy(duration: 0.15), value: highlighted)
-            .contentShape(RoundedRectangle(cornerRadius: 10))
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(action.subtitle)
+    }
+
+    @ViewBuilder private var background: some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        if isPrimary {
+            shape.fill(Color.accentColor.gradient).brightness(hovering || highlighted ? 0.08 : 0)
+        } else {
+            shape.fill(highlighted ? Color.accentColor.opacity(0.22) : Color.primary.opacity(hovering ? 0.11 : 0.06))
+        }
     }
 }
 
@@ -487,9 +495,9 @@ struct KeyCap: View {
 
     var body: some View {
         Text("\(number)")
-            .font(.system(size: 10, weight: .semibold, design: .rounded))
-            .frame(width: 17, height: 17)
-            .background(RoundedRectangle(cornerRadius: 4).fill(inverted ? Color.white.opacity(0.22) : Color.primary.opacity(0.08)))
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .frame(width: 20, height: 20)
+            .background(RoundedRectangle(cornerRadius: 5).fill(inverted ? Color.white.opacity(0.22) : Color.primary.opacity(0.08)))
             .foregroundStyle(inverted ? Color.white : Color.secondary)
     }
 }

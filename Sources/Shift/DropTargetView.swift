@@ -85,7 +85,7 @@ final class DropTargetView: NSView {
 
     /// Real URLs when available. File promises only reveal their types before the drop, so those become
     /// placeholder URLs with the right extension: enough to pick suggestions.
-    private static func previewURLs(_ pasteboard: NSPasteboard) -> [URL] {
+    static func previewURLs(_ pasteboard: NSPasteboard) -> [URL] {
         let urls = fileURLs(pasteboard)
         if !urls.isEmpty { return urls }
         let promises = pasteboard.readObjects(forClasses: [NSFilePromiseReceiver.self], options: nil) as? [NSFilePromiseReceiver] ?? []

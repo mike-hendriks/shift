@@ -12,14 +12,9 @@ enum DebugSnapshot {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
         Task {
-            let center = NSPoint(x: 700, y: 600)
-            drop.showDropZone(at: center)
-            try? await Task.sleep(for: .milliseconds(500))
-            capture(title: "dropzone", to: dir)
-
-            drop.present(files, at: center)
+            drop.present(files, dragging: true)
             try? await Task.sleep(for: .milliseconds(1200))
-            capture(title: "picker", to: dir)
+            capture(title: "bar", to: dir)
 
             // Simulate dragging over the third action and check hit-testing lands on it.
             drop.model.isDragging = true
@@ -32,7 +27,7 @@ enum DebugSnapshot {
                 drop.model.dropSpot = hit
             }
             try? await Task.sleep(for: .milliseconds(600))
-            capture(title: "picker-hover", to: dir)
+            capture(title: "bar-hover", to: dir)
             drop.model.isDragging = false
             drop.model.dropSpot = nil
 

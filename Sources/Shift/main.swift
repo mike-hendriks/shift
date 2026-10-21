@@ -19,7 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         shelf = ShelfController(store: shelfStore) { [weak self] dragging in self?.watcher.isSuppressed = dragging }
         drop = DropController(shelf: shelfStore) { [weak self] in self?.outputDirectory ?? Processor.defaultOutputDirectory }
 
-        watcher.onShiftDrag = { [weak self] point in self?.drop.showDropZone(at: point) }
+        watcher.onShiftDrag = { [weak self] _ in self?.drop.showForDrag() }
         watcher.onDragEnded = { [weak self] in self?.drop.dragEnded() }
         watcher.start()
 
@@ -78,8 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.canChooseDirectories = false
         NSApp.activate()
         guard panel.runModal() == .OK else { return }
-        let center = NSScreen.main.map { NSPoint(x: $0.visibleFrame.midX, y: $0.visibleFrame.midY + 120) }
-        drop.present(panel.urls, at: center)
+        drop.present(panel.urls)
     }
 
     @objc private func openOutput() {
