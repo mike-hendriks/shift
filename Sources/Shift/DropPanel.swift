@@ -23,7 +23,7 @@ final class DropModel: ObservableObject {
     /// True while files are being dragged: letting go on a tile runs that action.
     @Published var isDragging = false
     @Published var dropSpot: DropSpot?
-    /// Width of the bar, the full width of the screen it appears on.
+    /// Width of the bar: the screen width, capped at `DropController.maxWidth`.
     @Published var width: CGFloat = 1200
     /// Frames of the drop spots in the panel's top-left based coordinates, reported by the views.
     var spotFrames: [DropSpot: CGRect] = [:]
@@ -42,9 +42,11 @@ final class DropModel: ObservableObject {
     }
 }
 
-/// The action bar: slides in across the top of the screen while you drag with Shift held.
+/// The action bar: slides in at the top of the screen, centred, while you drag with Shift held.
 @MainActor
 final class DropController {
+    static let maxWidth: CGFloat = 1600
+
     let model = DropModel()
     private let shelf: ShelfStore
     private let outputDirectory: () -> URL
@@ -136,11 +138,11 @@ final class DropController {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return }
-        model.width = visible.width - 24
+        model.width = min(visible.width - 24, Self.maxWidth)
 
         // Pin the top edge under the menu bar; the panel then grows downward as SwiftUI lays out the tiles.
         let height = panel.isVisible ? panel.frame.height : 220
-        let frame = NSRect(x: visible.minX + 12, y: visible.maxY - 8 - height, width: model.width, height: height)
+        let frame = NSRect(x: visible.midX - model.width / 2, y: visible.maxY - 8 - height, width: model.width, height: height)
         if panel.isVisible {
             isHiding = false
             panel.setFrame(frame, display: true)
@@ -300,13 +302,13 @@ struct DropBar: View {
                 .font(.system(size: 22))
                 .foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 6) {
-                Text("Niet alles is gelukt").font(.system(size: 15, weight: .semibold))
+                Text("Not everything worked").font(.system(size: 15, weight: .semibold))
                 ForEach(model.failures, id: \.self) { message in
                     Text(message).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer()
-            Button("Sluiten") { controller.hide() }.keyboardShortcut(.defaultAction).controlSize(.large)
+            Button("Close") { controller.hide() }.keyboardShortcut(.defaultAction).controlSize(.large)
         }
         .padding(22)
     }
@@ -323,7 +325,7 @@ struct ActionBar: View {
         VStack(alignment: .leading, spacing: 16) {
             header
             if model.groups.isEmpty {
-                Text("Shift weet nog niet wat het met dit type moet. Zet het op de shelf om het bij de hand te houden.")
+                Text("Shift has no actions for this type yet. Put it on the shelf to keep it at hand.")
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
             }
@@ -359,11 +361,11 @@ struct ActionBar: View {
                 }
             }
             Spacer(minLength: 20)
-            Text(model.isDragging ? "Laat los op een actie" : "Klik of druk 1–9 · Esc sluit")
+            Text(model.isDragging ? "Drop on an action" : "Click or press 1–9 · Esc closes")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.secondary)
             parkButton
-            IconButton(symbol: "xmark", help: "Sluiten (Esc)") { controller.hide() }
+            IconButton(symbol: "xmark", help: "Close (Esc)") { controller.hide() }
         }
     }
 
@@ -372,7 +374,7 @@ struct ActionBar: View {
         return Button {
             controller.park(model.files)
         } label: {
-            Label("Op de shelf", systemImage: "tray.and.arrow.down")
+            Label("To Shelf", systemImage: "tray.and.arrow.down")
                 .font(.system(size: 13, weight: .semibold))
                 .padding(.horizontal, 14)
                 .frame(height: 36)

@@ -219,7 +219,7 @@ struct ShelfView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: "shift.fill").font(.system(size: 13, weight: .bold))
-            Text(store.items.isEmpty ? "Shift" : "\(store.items.count) klaar")
+            Text(store.items.isEmpty ? "Shift" : "\(store.items.count) ready")
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
                 .fixedSize()
@@ -229,21 +229,21 @@ struct ShelfView: View {
             }
             if !store.items.isEmpty {
                 Menu {
-                    Button("Alles kopiëren") { copyToPasteboard(store.items.map(\.url)) }
-                    Button("Toon in Finder") { NSWorkspace.shared.activateFileViewerSelecting(store.items.map(\.url)) }
+                    Button("Copy All") { copyToPasteboard(store.items.map(\.url)) }
+                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(store.items.map(\.url)) }
                     Divider()
-                    Button("Shelf leegmaken", role: .destructive) { store.clear() }
+                    Button("Clear Shelf", role: .destructive) { store.clear() }
                 } label: {
                     Image(systemName: "ellipsis")
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                IconButton(symbol: store.collapsed ? "chevron.down" : "chevron.up", help: store.collapsed ? "Uitklappen" : "Inklappen") {
+                IconButton(symbol: store.collapsed ? "chevron.down" : "chevron.up", help: store.collapsed ? "Expand" : "Collapse") {
                     store.collapsed.toggle()
                 }
             }
-            IconButton(symbol: "xmark", help: "Sluiten en leegmaken", action: onClose)
+            IconButton(symbol: "xmark", help: "Close and clear", action: onClose)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
@@ -251,9 +251,9 @@ struct ShelfView: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Sleep bestanden en houd ⇧ Shift ingedrukt.")
+            Text("Drag files and hold ⇧ Shift.")
                 .font(.system(size: 12, weight: .medium))
-            Text("Resultaten blijven hier hangen. Sleep ze zo door naar je volgende tool.")
+            Text("Results stay here. Drag them straight into your next tool.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
@@ -285,13 +285,13 @@ struct ShelfRow: View {
             }
             .contentShape(Rectangle())
             .overlay(FileDragSource(urls: [item.url], onDragChanged: onDragChanged, onClick: { store.selection = item.id }))
-            .help("Sleep naar een app, spatie voor voorvertoning, dubbelklik om te openen")
+            .help("Drag into any app, Space to preview, double-click to open")
 
             if hovering {
                 HStack(spacing: 2) {
-                    IconButton(symbol: "doc.on.doc", help: "Kopiëren") { copyToPasteboard([item.url]) }
-                    IconButton(symbol: "folder", help: "Toon in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
-                    IconButton(symbol: "xmark", help: "Van shelf halen") { store.remove(item) }
+                    IconButton(symbol: "doc.on.doc", help: "Copy") { copyToPasteboard([item.url]) }
+                    IconButton(symbol: "folder", help: "Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
+                    IconButton(symbol: "xmark", help: "Remove from shelf") { store.remove(item) }
                 }
                 .transition(.opacity)
             }
@@ -340,7 +340,7 @@ struct DragAllButton: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "hand.draw")
-            Text("Sleep alles")
+            Text("Drag all")
         }
         .lineLimit(1)
         .fixedSize()
@@ -349,7 +349,7 @@ struct DragAllButton: View {
         .padding(.vertical, 4)
         .background(Capsule().fill(Color.primary.opacity(0.08)))
         .overlay(FileDragSource(urls: urls, onDragChanged: onDragChanged))
-        .help("Sleep alle bestanden tegelijk naar een app")
+        .help("Drag every file into an app at once")
     }
 }
 

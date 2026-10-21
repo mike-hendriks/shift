@@ -20,16 +20,16 @@ public enum FileKind: String, CaseIterable, Sendable {
         return .other
     }
 
-    /// Dutch label shown in the UI, singular or plural.
+    /// Label shown in the UI, singular or plural.
     public func label(count: Int) -> String {
         let one = count == 1
         switch self {
-        case .image: return one ? "afbeelding" : "afbeeldingen"
-        case .document: return one ? "tekstbestand" : "tekstbestanden"
-        case .pdf: return one ? "PDF" : "PDF's"
-        case .video: return one ? "video" : "video's"
-        case .audio: return one ? "audiobestand" : "audiobestanden"
-        case .other: return one ? "overig bestand" : "overige bestanden"
+        case .image: return one ? "image" : "images"
+        case .document: return one ? "text file" : "text files"
+        case .pdf: return one ? "PDF" : "PDFs"
+        case .video: return one ? "video" : "videos"
+        case .audio: return one ? "audio file" : "audio files"
+        case .other: return one ? "other file" : "other files"
         }
     }
 

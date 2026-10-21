@@ -6,7 +6,7 @@ Results stay in a floating shelf, ready to drag into the next tool.
 ## How it works
 
 1. Drag one or more files anywhere (Finder, desktop, any app that drags real files).
-2. Hold **Shift** while dragging. A bar slides in across the full width of the screen, under the menu bar,
+2. Hold **Shift** while dragging. A bar slides in at the top of the screen (full width, at most 1600 px), under the menu bar,
    with large tiles for the actions that fit what you are dragging.
 3. Slide onto a tile and let go: it runs right away. Let go on "Op de shelf" to park the files as they are.
    Let go anywhere else on the bar and it stays open: click a tile or press 1-9 (Return runs the first).

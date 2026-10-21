@@ -7,9 +7,9 @@ enum PDFProcessor {
     static func compress(_ url: URL, output: URL) throws {
         guard let document = PDFDocument(url: url) else { throw ShiftError.unreadable(url) }
         let filterURL = URL(fileURLWithPath: "/System/Library/Filters/Reduce File Size.qfilter")
-        guard let filter = QuartzFilter(url: filterURL) else { throw ShiftError.failed("Quartz-filter niet gevonden") }
+        guard let filter = QuartzFilter(url: filterURL) else { throw ShiftError.failed("Quartz filter not found") }
         let options = [PDFDocumentWriteOption(rawValue: "QuartzFilter"): filter]
-        guard document.write(to: output, withOptions: options) else { throw ShiftError.failed("PDF opslaan mislukt") }
+        guard document.write(to: output, withOptions: options) else { throw ShiftError.failed("Could not save the PDF") }
     }
 
     /// Renders every page at 2x into separate image files.

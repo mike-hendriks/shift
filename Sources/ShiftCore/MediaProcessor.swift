@@ -5,10 +5,10 @@ enum MediaProcessor {
                        timeRange: CMTimeRange? = nil) async throws {
         let asset = AVURLAsset(url: url)
         if preset == AVAssetExportPresetAppleM4A, try await asset.loadTracks(withMediaType: .audio).isEmpty {
-            throw ShiftError.failed("\(url.lastPathComponent) heeft geen audio")
+            throw ShiftError.failed("\(url.lastPathComponent) has no audio")
         }
         guard let session = AVAssetExportSession(asset: asset, presetName: preset) else {
-            throw ShiftError.failed("Exporteren kan niet voor \(url.lastPathComponent)")
+            throw ShiftError.failed("Cannot export \(url.lastPathComponent)")
         }
         session.shouldOptimizeForNetworkUse = true
         if let timeRange { session.timeRange = timeRange }
@@ -21,7 +21,7 @@ enum MediaProcessor {
                                 to output: URL) async throws {
         let asset = AVURLAsset(url: url)
         guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else {
-            throw ShiftError.failed("\(url.lastPathComponent) heeft geen videospoor")
+            throw ShiftError.failed("\(url.lastPathComponent) has no video track")
         }
         let audioTrack = try await asset.loadTracks(withMediaType: .audio).first
         let (natural, transform, fps, sourceRate) = try await videoTrack.load(.naturalSize, .preferredTransform,
@@ -77,8 +77,8 @@ enum MediaProcessor {
             pairs.append((audioOutput, audioInput))
         }
 
-        guard reader.startReading() else { throw reader.error ?? ShiftError.failed("Video lezen mislukt") }
-        guard writer.startWriting() else { throw writer.error ?? ShiftError.failed("Video schrijven mislukt") }
+        guard reader.startReading() else { throw reader.error ?? ShiftError.failed("Could not read the video") }
+        guard writer.startWriting() else { throw writer.error ?? ShiftError.failed("Could not write the video") }
         writer.startSession(atSourceTime: .zero)
 
         await withTaskGroup(of: Void.self) { group in
@@ -105,7 +105,7 @@ enum MediaProcessor {
 
         if reader.status == .failed || writer.status == .failed {
             writer.cancelWriting()
-            throw writer.error ?? reader.error ?? ShiftError.failed("Video omzetten mislukt")
+            throw writer.error ?? reader.error ?? ShiftError.failed("Could not convert the video")
         }
         await writer.finishWriting()
         if let error = writer.error { throw error }

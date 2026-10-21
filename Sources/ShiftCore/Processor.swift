@@ -8,9 +8,9 @@ public enum ShiftError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .unreadable(let url): return "\(url.lastPathComponent) kan niet gelezen worden"
+        case .unreadable(let url): return "Could not read \(url.lastPathComponent)"
         case .failed(let message): return message
-        case .missingTool(let tool, let install): return "\(tool) ontbreekt. Installeer met: \(install)"
+        case .missingTool(let tool, let install): return "\(tool) is missing. Install it with: \(install)"
         }
     }
 }
@@ -132,7 +132,7 @@ public enum Processor {
             var note: String?
             if !canWriteWebP {
                 format = image.isTransparent ? .png : .jpeg
-                note = "cwebp ontbreekt, \(format.displayName) gebruikt"
+                note = "cwebp missing, used \(format.displayName)"
             }
             let out = OutputNamer.url(for: file, suffix: "web", ext: format.fileExtension, in: dir)
             try ImageProcessor.write(image, as: format, quality: WebPreset.quality, to: out)
@@ -215,7 +215,7 @@ public enum Processor {
             case .pdf: try MarkdownConverter.pdf(file, output: out)
             case .image: try MarkdownConverter.image(file, output: out)
             case .video, .audio: try await MarkdownConverter.transcribe(file, output: out)
-            case .other: throw ShiftError.failed("\(file.lastPathComponent) kan niet naar Markdown")
+            case .other: throw ShiftError.failed("\(file.lastPathComponent) cannot be converted to Markdown")
             }
             return [ShiftResult(sources: files, output: out)]
 
@@ -234,6 +234,6 @@ public enum Processor {
         }
         try? FileManager.default.removeItem(at: output)
         try? FileManager.default.copyItem(at: source, to: output)
-        return ShiftResult(sources: [source], output: output, note: "Was al optimaal, origineel behouden")
+        return ShiftResult(sources: [source], output: output, note: "Already optimal, kept the original")
     }
 }

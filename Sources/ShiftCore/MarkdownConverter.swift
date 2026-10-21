@@ -61,7 +61,7 @@ enum MarkdownConverter {
 
         let markdown = render(text)
         guard !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw ShiftError.failed("\(url.lastPathComponent) bevat geen tekst (gescand? Zet de pagina's om naar afbeeldingen voor OCR)")
+            throw ShiftError.failed("\(url.lastPathComponent) has no text (scanned? Export the pages as images and use OCR)")
         }
         try write(markdown, to: output)
     }
@@ -86,7 +86,7 @@ enum MarkdownConverter {
             let sameRow = abs(a.box.midY - b.box.midY) < min(a.box.height, b.box.height) / 2
             return sameRow ? a.box.minX < b.box.minX : a.box.midY > b.box.midY
         }
-        guard !lines.isEmpty else { throw ShiftError.failed("Geen tekst gevonden in \(url.lastPathComponent)") }
+        guard !lines.isEmpty else { throw ShiftError.failed("No text found in \(url.lastPathComponent)") }
 
         let heights = lines.map { $0.box.height }.sorted()
         let median = heights[heights.count / 2]
@@ -124,7 +124,7 @@ enum MarkdownConverter {
     /// your preferred languages and the one with the highest recognition confidence wins.
     /// Paragraphs break at pauses and start with a timestamp.
     static func transcribe(_ url: URL, output: URL) async throws {
-        guard #available(macOS 26, *) else { throw ShiftError.failed("Transcriberen kan vanaf macOS 26") }
+        guard #available(macOS 26, *) else { throw ShiftError.failed("Transcription needs macOS 26 or later") }
 
         let temp = FileManager.default.temporaryDirectory
         let audio = temp.appendingPathComponent(UUID().uuidString + ".m4a")
@@ -132,7 +132,7 @@ enum MarkdownConverter {
         try await MediaProcessor.export(url, preset: AVAssetExportPresetAppleM4A, fileType: .m4a, to: audio)
 
         let languages = await Transcription.candidateLocales()
-        guard !languages.isEmpty else { throw ShiftError.failed("Geen transcriptietaal beschikbaar") }
+        guard !languages.isEmpty else { throw ShiftError.failed("No transcription language available") }
 
         var transcript: Transcription.Result?
         if languages.count > 1 {
@@ -149,14 +149,14 @@ enum MarkdownConverter {
                 log("Sample in \(locale.identifier): confidence \(result.confidence)")
                 if best == nil || result.confidence > best!.result.confidence { best = (locale, result) }
             }
-            guard let best else { throw ShiftError.failed("Transcriberen mislukt") }
+            guard let best else { throw ShiftError.failed("Transcription failed") }
             transcript = sample == audio ? best.result : try await Transcription.run(audio, locale: best.locale)
         } else {
             transcript = try await Transcription.run(audio, locale: languages[0])
         }
 
         let segments = (transcript?.segments ?? []).filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
-        guard !segments.isEmpty else { throw ShiftError.failed("Geen spraak gevonden in \(url.lastPathComponent)") }
+        guard !segments.isEmpty else { throw ShiftError.failed("No speech found in \(url.lastPathComponent)") }
 
         var paragraphs: [String] = []
         var current = ""

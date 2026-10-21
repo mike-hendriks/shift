@@ -41,7 +41,7 @@ enum ImageProcessor {
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
               let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
                                   space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
-            throw ShiftError.failed("Kon geen sRGB-bitmap maken")
+            throw ShiftError.failed("Could not create an sRGB bitmap")
         }
         ctx.interpolationQuality = .high
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
@@ -56,7 +56,7 @@ enum ImageProcessor {
                 i += 4
             }
         }
-        guard let output = ctx.makeImage() else { throw ShiftError.failed("Kon afbeelding niet omzetten") }
+        guard let output = ctx.makeImage() else { throw ShiftError.failed("Could not convert the image") }
         return PreparedImage(cgImage: output, isTransparent: transparent)
     }
 
@@ -77,12 +77,12 @@ enum ImageProcessor {
         if format == .jpeg, image.isTransparent { cgImage = flattened(cgImage) }
 
         guard let dest = CGImageDestinationCreateWithURL(url as CFURL, format.utType.identifier as CFString, 1, nil) else {
-            throw ShiftError.failed("\(format.displayName) wordt niet ondersteund")
+            throw ShiftError.failed("\(format.displayName) is not supported")
         }
         var props: [CFString: Any] = [:]
         if format.isLossy { props[kCGImageDestinationLossyCompressionQuality] = quality }
         CGImageDestinationAddImage(dest, cgImage, props as CFDictionary)
-        guard CGImageDestinationFinalize(dest) else { throw ShiftError.failed("Opslaan als \(format.displayName) mislukt") }
+        guard CGImageDestinationFinalize(dest) else { throw ShiftError.failed("Could not save as \(format.displayName)") }
     }
 
     private static func flattened(_ image: CGImage) -> CGImage {
@@ -122,7 +122,7 @@ enum ImageProcessor {
     static func combineIntoPDF(_ urls: [URL], to output: URL) throws {
         var mediaBox = CGRect.zero
         guard let ctx = CGContext(output as CFURL, mediaBox: &mediaBox, nil) else {
-            throw ShiftError.failed("Kon PDF niet aanmaken")
+            throw ShiftError.failed("Could not create the PDF")
         }
         for url in urls {
             let image = try pdfReady(load(url, resize: .longEdge(3000)))

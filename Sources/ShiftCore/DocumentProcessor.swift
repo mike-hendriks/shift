@@ -67,7 +67,7 @@ enum DocumentProcessor {
         var mediaBox = CGRect(origin: .zero, size: pageSize)
         let info = [kCGPDFContextTitle: title, kCGPDFContextCreator: "Shift"] as CFDictionary
         guard let ctx = CGContext(output as CFURL, mediaBox: &mediaBox, info) else {
-            throw ShiftError.failed("Kon PDF niet aanmaken")
+            throw ShiftError.failed("Could not create the PDF")
         }
 
         // Dynamic colours like labelColor must resolve to their light variants on paper.

@@ -44,24 +44,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        menu.addItem(item("Shelf tonen", #selector(showShelf), key: ""))
-        menu.addItem(item("Bestanden kiezen…", #selector(chooseFiles), key: "o"))
+        menu.addItem(item("Show Shelf", #selector(showShelf), key: ""))
+        menu.addItem(item("Choose Files…", #selector(chooseFiles), key: "o"))
         menu.addItem(.separator())
-        menu.addItem(item("Outputmap openen", #selector(openOutput), key: ""))
-        let folder = item("Outputmap: \(outputDirectory.lastPathComponent)", #selector(changeOutput), key: "")
+        menu.addItem(item("Open Output Folder", #selector(openOutput), key: ""))
+        let folder = item("Output Folder: \(outputDirectory.lastPathComponent)", #selector(changeOutput), key: "")
         folder.toolTip = outputDirectory.path
         menu.addItem(folder)
-        let login = item("Start bij inloggen", #selector(toggleLogin), key: "")
+        let login = item("Launch at Login", #selector(toggleLogin), key: "")
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
         if !Processor.canWriteWebP {
             menu.addItem(.separator())
-            let warning = NSMenuItem(title: "WebP uit: installeer met brew install webp", action: nil, keyEquivalent: "")
+            let warning = NSMenuItem(title: "WebP off: install with brew install webp", action: nil, keyEquivalent: "")
             warning.isEnabled = false
             menu.addItem(warning)
         }
         menu.addItem(.separator())
-        menu.addItem(item("Stop Shift", #selector(quit), key: "q"))
+        menu.addItem(item("Quit Shift", #selector(quit), key: "q"))
     }
 
     private func item(_ title: String, _ action: Selector, key: String) -> NSMenuItem {
@@ -92,7 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         panel.directoryURL = outputDirectory
-        panel.prompt = "Kies map"
+        panel.prompt = "Choose Folder"
         NSApp.activate()
         if panel.runModal() == .OK, let url = panel.url { outputDirectory = url }
     }
