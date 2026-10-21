@@ -18,12 +18,12 @@ enum MediaProcessor {
     /// Re-encodes to H.264 + AAC in MP4 with a capped bitrate, so the result is small and plays in every browser.
     /// Apple's export presets use fixed high bitrates and often make already-efficient files bigger.
     static func transcodeForWeb(_ url: URL, maxShortEdge: Int, bitsPerPixel: Double = 0.1, sourceCap: Double = 1.1,
-                                to output: URL) async throws {
+                                includeAudio: Bool = true, to output: URL) async throws {
         let asset = AVURLAsset(url: url)
         guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else {
             throw ShiftError.failed("\(url.lastPathComponent) has no video track")
         }
-        let audioTrack = try await asset.loadTracks(withMediaType: .audio).first
+        let audioTrack = includeAudio ? try await asset.loadTracks(withMediaType: .audio).first : nil
         let (natural, transform, fps, sourceRate) = try await videoTrack.load(.naturalSize, .preferredTransform,
                                                                               .nominalFrameRate, .estimatedDataRate)
 

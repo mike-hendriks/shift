@@ -1,5 +1,4 @@
 import AppKit
-import ServiceManagement
 import ShiftCore
 
 @MainActor
@@ -9,22 +8,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var shelf: ShelfController!
     private var drop: DropController!
     private var statusItem: NSStatusItem!
-
-    private var outputDirectory: URL {
-        get { UserDefaults.standard.url(forKey: "outputDirectory") ?? Processor.defaultOutputDirectory }
-        set { UserDefaults.standard.set(newValue, forKey: "outputDirectory") }
-    }
+    private let settings = SettingsStore()
+    private var settingsWindow: SettingsWindowController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         shelf = ShelfController(store: shelfStore) { [weak self] dragging in self?.watcher.isSuppressed = dragging }
-        drop = DropController(shelf: shelfStore) { [weak self] in self?.outputDirectory ?? Processor.defaultOutputDirectory }
+        drop = DropController(shelf: shelfStore, settings: settings)
+        settingsWindow = SettingsWindowController(store: settings)
 
         watcher.onShiftDrag = { [weak self] _ in self?.drop.showForDrag() }
         watcher.onDragEnded = { [weak self] in self?.drop.dragEnded() }
         watcher.start()
 
         setUpStatusItem()
-        if DebugSnapshot.runIfRequested(drop: drop, shelf: shelf, store: shelfStore) { return }
+        setUpMainMenu()
+        if DebugSnapshot.runIfRequested(drop: drop, shelf: shelf, store: shelfStore, settings: settingsWindow) { return }
 
         if !UserDefaults.standard.bool(forKey: "hasLaunched") {
             UserDefaults.standard.set(true, forKey: "hasLaunched")
@@ -48,12 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(item("Choose Files…", #selector(chooseFiles), key: "o"))
         menu.addItem(.separator())
         menu.addItem(item("Open Output Folder", #selector(openOutput), key: ""))
-        let folder = item("Output Folder: \(outputDirectory.lastPathComponent)", #selector(changeOutput), key: "")
-        folder.toolTip = outputDirectory.path
-        menu.addItem(folder)
-        let login = item("Launch at Login", #selector(toggleLogin), key: "")
-        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        menu.addItem(login)
+        menu.addItem(item("Settings…", #selector(showSettings), key: ","))
         if !Processor.canWriteWebP {
             menu.addItem(.separator())
             let warning = NSMenuItem(title: "WebP off: install with brew install webp", action: nil, keyEquivalent: "")
@@ -62,6 +55,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu.addItem(.separator())
         menu.addItem(item("Quit Shift", #selector(quit), key: "q"))
+    }
+
+    /// Shift has no Dock icon, but its settings window still needs ⌘W, ⌘, and editing shortcuts in text fields.
+    private func setUpMainMenu() {
+        let main = NSMenu()
+        let appMenu = NSMenu()
+        appMenu.addItem(item("Settings…", #selector(showSettings), key: ","))
+        appMenu.addItem(.separator())
+        appMenu.addItem(item("Quit Shift", #selector(quit), key: "q"))
+        main.addItem(submenu("Shift", appMenu))
+
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        main.addItem(submenu("Edit", editMenu))
+
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        main.addItem(submenu("Window", windowMenu))
+        NSApp.mainMenu = main
+    }
+
+    private func submenu(_ title: String, _ menu: NSMenu) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.submenu = menu
+        return item
     }
 
     private func item(_ title: String, _ action: Selector, key: String) -> NSMenuItem {
@@ -82,33 +106,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openOutput() {
-        try? FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
-        NSWorkspace.shared.open(outputDirectory)
+        let folder = settings.settings.outputURL
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(folder)
     }
 
-    @objc private func changeOutput() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.directoryURL = outputDirectory
-        panel.prompt = "Choose Folder"
-        NSApp.activate()
-        if panel.runModal() == .OK, let url = panel.url { outputDirectory = url }
-    }
-
-    @objc private func toggleLogin() {
-        do {
-            if SMAppService.mainApp.status == .enabled {
-                try SMAppService.mainApp.unregister()
-            } else {
-                try SMAppService.mainApp.register()
-            }
-        } catch {
-            let alert = NSAlert(error: error)
-            alert.runModal()
-        }
-    }
+    @objc private func showSettings() { settingsWindow.show() }
 
     @objc private func quit() { NSApp.terminate(nil) }
 }

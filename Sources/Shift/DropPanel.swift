@@ -49,16 +49,16 @@ final class DropController {
 
     let model = DropModel()
     private let shelf: ShelfStore
-    private let outputDirectory: () -> URL
+    private let settings: SettingsStore
     private var panel: FloatingPanel!
     private var dropTarget: DropTargetView!
     private var clickMonitor: Any?
     private var pendingSpot: DropSpot?
     private var isHiding = false
 
-    init(shelf: ShelfStore, outputDirectory: @escaping () -> URL) {
+    init(shelf: ShelfStore, settings: SettingsStore) {
         self.shelf = shelf
-        self.outputDirectory = outputDirectory
+        self.settings = settings
         panel = FloatingPanel(rootView: DropBar(model: model, controller: self))
         panel.onKeyDown = { [weak self] in self?.handleKey($0) ?? false }
 
@@ -127,7 +127,7 @@ final class DropController {
 
     private func show(_ files: [URL], dragging: Bool) {
         model.files = files
-        model.groups = Suggestions.groups(for: files).filter { !$0.actions.isEmpty }
+        model.groups = Suggestions.groups(for: files, settings: settings.settings).filter { !$0.actions.isEmpty }
         model.phase = .choosing
         model.isDragging = dragging
         model.isTargeted = false
@@ -190,12 +190,15 @@ final class DropController {
         model.done = 0
         model.total = files.count
         dropTarget.isHidden = true
-        let directory = outputDirectory()
+        let directory = settings.settings.outputURL
         Task {
             let report = await Processor.run(action, on: files, outputDirectory: directory) { done, _ in
                 Task { @MainActor in self.model.done = done }
             }
             shelf.add(report.results)
+            if settings.settings.copyResultsToClipboard, !report.results.isEmpty {
+                copyToPasteboard(report.results.map(\.output))
+            }
             if report.failures.isEmpty {
                 hide()
             } else {
@@ -325,7 +328,7 @@ struct ActionBar: View {
         VStack(alignment: .leading, spacing: 16) {
             header
             if model.groups.isEmpty {
-                Text("Shift has no actions for this type yet. Put it on the shelf to keep it at hand.")
+                Text("No actions for this type. Put it on the shelf to keep it at hand, or switch actions on in Settings.")
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
             }
@@ -416,7 +419,7 @@ struct ActionBar: View {
                 HStack(spacing: spacing) {
                     ForEach(rows[rowIndex]) { action in
                         let index = model.index(of: action, in: group)
-                        ActionTile(action: action, index: index,
+                        ActionTile(action: action, index: index, isPrimary: action == group.actions.first,
                                    highlighted: index.map { model.dropSpot == .action($0) } ?? false) {
                             controller.perform(action, on: group.files)
                         }
@@ -435,11 +438,11 @@ struct ActionBar: View {
 struct ActionTile: View {
     let action: ShiftAction
     let index: Int?
+    /// The first action of a group, the one Return runs.
+    var isPrimary = false
     var highlighted = false
     let perform: () -> Void
     @State private var hovering = false
-
-    private var isPrimary: Bool { action == .webPreset }
 
     var body: some View {
         Button(action: perform) {

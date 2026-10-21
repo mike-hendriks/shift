@@ -3,10 +3,34 @@ import PDFKit
 import Quartz
 
 enum PDFProcessor {
-    /// Re-renders images in the PDF with the system "Reduce File Size" Quartz filter (JPEG, 144 dpi).
-    static func compress(_ url: URL, output: URL) throws {
+    /// Re-renders images in the PDF as JPEG at the given quality and resolution, through a Quartz filter
+    /// built like the system "Reduce File Size" one.
+    static func compress(_ url: URL, imageQuality: Double, imageDPI: Int, output: URL) throws {
         guard let document = PDFDocument(url: url) else { throw ShiftError.unreadable(url) }
-        let filterURL = URL(fileURLWithPath: "/System/Library/Filters/Reduce File Size.qfilter")
+        let filterData: [String: Any] = [
+            "Domains": ["Applications": true, "Printing": true],
+            "FilterType": 1,
+            "Name": "Shift \(imageDPI) dpi",
+            "FilterData": [
+                "ColorSettings": [
+                    "ImageSettings": [
+                        "Compression Quality": imageQuality,
+                        "ImageCompression": "ImageJPEGCompress",
+                        "ImageScaleSettings": [
+                            "ImageResolution": imageDPI,
+                            "ImageScaleInterpolate": true,
+                            "ImageSizeMax": 0,
+                            "ImageSizeMin": 0,
+                        ],
+                    ],
+                ],
+            ],
+        ]
+        let filterURL = FileManager.default.temporaryDirectory.appendingPathComponent("shift-\(UUID().uuidString).qfilter")
+        defer { try? FileManager.default.removeItem(at: filterURL) }
+        let data = try PropertyListSerialization.data(fromPropertyList: filterData, format: .xml, options: 0)
+        try data.write(to: filterURL)
+
         guard let filter = QuartzFilter(url: filterURL) else { throw ShiftError.failed("Quartz filter not found") }
         let options = [PDFDocumentWriteOption(rawValue: "QuartzFilter"): filter]
         guard document.write(to: output, withOptions: options) else { throw ShiftError.failed("Could not save the PDF") }

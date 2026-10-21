@@ -19,7 +19,8 @@ var args = Array(CommandLine.arguments.dropFirst())
 guard let command = args.first else { usage() }
 args.removeFirst()
 
-var outputDirectory = Processor.defaultOutputDirectory
+let settings = ShiftSettings.load()
+var outputDirectory = settings.outputURL
 if let i = args.firstIndex(of: "--out"), i + 1 < args.count {
     outputDirectory = URL(fileURLWithPath: args[i + 1])
     args.removeSubrange(i...(i + 1))
@@ -32,16 +33,16 @@ func formatBytes(_ bytes: Int64) -> String {
 }
 
 if command == "suggest" {
-    for group in Suggestions.groups(for: files) {
+    for group in Suggestions.groups(for: files, settings: settings) {
         print("\(group.files.count) \(group.kind.label(count: group.files.count))")
         for action in group.actions {
-            print("  \(action.id.padding(toLength: 16, withPad: " ", startingAt: 0)) \(action.title) · \(action.subtitle)")
+            print("  \(action.id.padding(toLength: 20, withPad: " ", startingAt: 0)) \(action.title) · \(action.subtitle)")
         }
     }
     exit(0)
 }
 
-guard let action = ShiftAction(id: command) else {
+guard let action = settings.action(id: command) else {
     print("Unknown action: \(command)")
     usage()
 }

@@ -126,16 +126,32 @@ public enum Processor {
     private static func process(_ action: ShiftAction, _ files: [URL], _ dir: URL) async throws -> [ShiftResult] {
         let file = files[0]
         switch action {
-        case .webPreset:
-            let image = try ImageProcessor.load(file, resize: .longEdge(WebPreset.maxLongEdge))
-            var format = ImageFormat.webp
+        case .imagePreset(let preset):
+            let image = try ImageProcessor.load(file, resize: preset.resize.mode)
+            let source = ImageFormat.of(file)
+            let fallback: ImageFormat = image.isTransparent ? .png : .jpeg
             var note: String?
-            if !canWriteWebP {
-                format = image.isTransparent ? .png : .jpeg
-                note = "cwebp missing, used \(format.displayName)"
+            var format: ImageFormat
+            switch preset.format {
+            case .original:
+                format = source.flatMap { $0 == .webp && !canWriteWebP ? nil : $0 } ?? fallback
+            case .auto:
+                if let source, source.isLossy, source != .webp || canWriteWebP {
+                    format = source
+                } else {
+                    format = image.isTransparent ? (canWriteWebP ? .webp : .png) : .jpeg
+                }
+            case .format(let target):
+                format = target
+                if target == .webp && !canWriteWebP {
+                    format = fallback
+                    note = "cwebp missing, used \(format.displayName)"
+                }
             }
-            let out = OutputNamer.url(for: file, suffix: "web", ext: format.fileExtension, in: dir)
-            try ImageProcessor.write(image, as: format, quality: WebPreset.quality, to: out)
+            let out = OutputNamer.url(for: file, suffix: Presets.slug(preset.name), ext: format.fileExtension, in: dir)
+            try ImageProcessor.write(image, as: format, quality: preset.quality, to: out)
+            // Pure compression must never make a file bigger.
+            if preset.resize == .none, format == source { return [keepSmaller(source: file, output: out)] }
             return [ShiftResult(sources: files, output: out, note: note)]
 
         case .convertImage(let format):
@@ -144,35 +160,6 @@ public enum Processor {
             let out = OutputNamer.url(for: file, suffix: nil, ext: format.fileExtension, in: dir)
             try ImageProcessor.write(image, as: format, quality: quality, to: out)
             return [ShiftResult(sources: files, output: out)]
-
-        case .resize(let mode):
-            let image = try ImageProcessor.load(file, resize: mode)
-            let format = ImageFormat.of(file).flatMap { $0 == .webp && !canWriteWebP ? nil : $0 }
-                ?? (image.isTransparent ? .png : .jpeg)
-            let suffix: String
-            switch mode {
-            case .percent(let p): suffix = "\(p)pct"
-            case .longEdge(let px): suffix = "\(px)"
-            }
-            let out = OutputNamer.url(for: file, suffix: suffix, ext: format.fileExtension, in: dir)
-            try ImageProcessor.write(image, as: format, quality: 0.88, to: out)
-            return [ShiftResult(sources: files, output: out)]
-
-        case .compressImage:
-            let image = try ImageProcessor.load(file)
-            let source = ImageFormat.of(file)
-            var format: ImageFormat
-            if let source, source.isLossy, source != .webp || canWriteWebP {
-                format = source
-            } else if image.isTransparent {
-                format = canWriteWebP ? .webp : .png
-            } else {
-                format = .jpeg
-            }
-            let quality: Double = [.jpeg: 0.72, .webp: 0.75, .avif: 0.6, .heic: 0.6][format] ?? 1
-            let out = OutputNamer.url(for: file, suffix: "compressed", ext: format.fileExtension, in: dir)
-            try ImageProcessor.write(image, as: format, quality: quality, to: out)
-            return [keepSmaller(source: file, output: out)]
 
         case .imagesToPDF:
             let out = OutputNamer.url(for: file, suffix: "bundle", ext: "pdf", in: dir)
@@ -189,18 +176,20 @@ public enum Processor {
             try await MainActor.run { try DocumentProcessor.toPlainText(file, output: out) }
             return [ShiftResult(sources: files, output: out)]
 
-        case .compressPDF:
-            let out = OutputNamer.url(for: file, suffix: "compressed", ext: "pdf", in: dir)
-            try PDFProcessor.compress(file, output: out)
+        case .pdfPreset(let preset):
+            let out = OutputNamer.url(for: file, suffix: Presets.slug(preset.name), ext: "pdf", in: dir)
+            try PDFProcessor.compress(file, imageQuality: preset.imageQuality, imageDPI: preset.imageDPI, output: out)
             return [keepSmaller(source: file, output: out)]
 
         case .pdfToImages(let format):
             return try PDFProcessor.toImages(file, format: format, outputDirectory: dir)
                 .map { ShiftResult(sources: files, output: $0) }
 
-        case .compressVideo(let height):
-            let out = OutputNamer.url(for: file, suffix: "\(height)p", ext: "mp4", in: dir)
-            try await MediaProcessor.transcodeForWeb(file, maxShortEdge: height, to: out)
+        case .videoPreset(let preset):
+            let out = OutputNamer.url(for: file, suffix: Presets.slug(preset.name), ext: "mp4", in: dir)
+            try await MediaProcessor.transcodeForWeb(file, maxShortEdge: preset.maxShortEdge == 0 ? .max : preset.maxShortEdge,
+                                                     bitsPerPixel: preset.quality.bitsPerPixel, sourceCap: preset.quality.sourceCap,
+                                                     includeAudio: preset.keepAudio, to: out)
             return [ShiftResult(sources: files, output: out)]
 
         case .videoToMP4:

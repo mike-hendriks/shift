@@ -1,6 +1,6 @@
 import Foundation
 
-/// A set of files of one kind, plus the actions that make sense for them, most relevant first.
+/// A set of files of one kind, plus the actions that make sense for them, in your order.
 public struct ActionGroup: Identifiable, Sendable {
     public let kind: FileKind
     public let files: [URL]
@@ -9,60 +9,55 @@ public struct ActionGroup: Identifiable, Sendable {
 }
 
 public enum Suggestions {
-    /// Groups dropped files by kind and suggests actions per group, based on what the files are.
-    public static func groups(for urls: [URL]) -> [ActionGroup] {
+    /// Groups dropped files by kind and lists the actions you switched on in Settings, minus the ones that
+    /// do nothing for these files.
+    public static func groups(for urls: [URL], settings: ShiftSettings = .load()) -> [ActionGroup] {
         let byKind = Dictionary(grouping: urls, by: FileKind.of)
         return FileKind.allCases.compactMap { kind in
             guard let files = byKind[kind], !files.isEmpty else { return nil }
-            return ActionGroup(kind: kind, files: files, actions: actions(for: kind, files: files))
+            return ActionGroup(kind: kind, files: files, actions: actions(for: kind, files: files, settings: settings))
         }
     }
 
-    public static func actions(for kind: FileKind, files: [URL]) -> [ShiftAction] {
-        switch kind {
-        case .image: return imageActions(files)
-        case .document:
-            let rich: Set<String> = ["doc", "docx", "odt", "rtf", "rtfd", "html", "htm", "pages"]
-            let hasRich = files.contains { rich.contains($0.pathExtension.lowercased()) }
-            let allMarkdown = files.allSatisfy { ["md", "markdown"].contains($0.pathExtension.lowercased()) }
-            return [.textToPDF] + (allMarkdown ? [] : [.toMarkdown(.document)]) + (hasRich ? [.textToPlain] : [])
-        case .pdf: return [.compressPDF, .toMarkdown(.pdf), .pdfToImages(.png), .pdfToImages(.jpeg)]
-        case .video:
-            let allMP4 = files.allSatisfy { $0.pathExtension.lowercased() == "mp4" }
-            return [.compressVideo(height: 1080), .compressVideo(height: 720)]
-                + (allMP4 ? [] : [.videoToMP4])
-                + [.extractAudio, .toMarkdown(.video)]
-        case .audio: return [.audioToM4A, .toMarkdown(.audio)]
-        case .other: return []
-        }
+    public static func actions(for kind: FileKind, files: [URL], settings: ShiftSettings = .load()) -> [ShiftAction] {
+        let context = Context(files)
+        return settings.orderedEntries(for: kind).filter(\.enabled).map(\.action).filter { context.applies($0) }
     }
 
-    private static func imageActions(_ files: [URL]) -> [ShiftAction] {
-        var actions: [ShiftAction] = [.webPreset]
+    /// What the dropped files are, to hide actions that would not change them.
+    private struct Context {
+        let files: [URL]
+        let formats: Set<ImageFormat>
+        let largestEdge: CGFloat
 
-        let formats = Set(files.compactMap(ImageFormat.of))
-        let dominant = files.lazy.compactMap(ImageFormat.of).first
-        let targets: [ImageFormat]
-        switch dominant {
-        case .heic: targets = [.jpeg, .png, .webp]
-        case .png: targets = [.webp, .jpeg, .avif]
-        case .jpeg: targets = [.webp, .avif, .png]
-        case .webp: targets = [.jpeg, .png, .avif]
-        case .avif: targets = [.jpeg, .png, .webp]
-        default: targets = [.jpeg, .png, .webp]
+        init(_ files: [URL]) {
+            self.files = files
+            formats = Set(files.compactMap(ImageFormat.of))
+            largestEdge = files.compactMap(imagePixelSize).map { max($0.width, $0.height) }.max() ?? .infinity
         }
-        // Skip a target only when every file already has that format.
-        actions += targets.filter { !(formats.count == 1 && formats.contains($0)) }.map { .convertImage($0) }
 
-        actions.append(.compressImage)
+        private var extensions: Set<String> { Set(files.map { $0.pathExtension.lowercased() }) }
 
-        // Only offer sizes that actually shrink the largest image.
-        let largest = files.compactMap(imagePixelSize).map { max($0.width, $0.height) }.max() ?? .infinity
-        actions.append(.resize(.percent(50)))
-        actions += [1920, 1280, 640].filter { CGFloat($0) < largest }.map { .resize(.longEdge($0)) }
-
-        if files.count > 1 { actions.append(.imagesToPDF) }
-        actions.append(.toMarkdown(.image))
-        return actions
+        func applies(_ action: ShiftAction) -> Bool {
+            switch action {
+            case .convertImage(let format):
+                // Skip a target only when every file already has that format.
+                return !(formats.count == 1 && formats.contains(format))
+            case .imagesToPDF:
+                return files.count > 1
+            case .imagePreset(let preset):
+                // A resize that keeps the format is pointless when every image is already small enough.
+                if preset.format == .original, case .longEdge(let px) = preset.resize { return CGFloat(px) < largestEdge }
+                return true
+            case .textToPlain:
+                return !extensions.isDisjoint(with: ["doc", "docx", "odt", "rtf", "rtfd", "html", "htm", "pages"])
+            case .toMarkdown(.document):
+                return !extensions.isSubset(of: ["md", "markdown"])
+            case .videoToMP4:
+                return extensions != ["mp4"]
+            default:
+                return true
+            }
+        }
     }
 }

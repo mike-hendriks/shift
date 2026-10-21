@@ -1,7 +1,7 @@
 import Foundation
 import UniformTypeIdentifiers
 
-public enum ImageFormat: String, CaseIterable, Sendable {
+public enum ImageFormat: String, CaseIterable, Codable, Sendable {
     case jpeg, png, webp, avif, heic, tiff
 
     public var fileExtension: String {
@@ -30,7 +30,7 @@ public enum ImageFormat: String, CaseIterable, Sendable {
         }
     }
 
-    var isLossy: Bool { [.jpeg, .webp, .avif, .heic].contains(self) }
+    public var isLossy: Bool { [.jpeg, .webp, .avif, .heic].contains(self) }
 
     static func of(_ url: URL) -> ImageFormat? {
         guard let type = contentType(of: url) else { return nil }
@@ -45,17 +45,16 @@ public enum ResizeMode: Hashable, Sendable {
 }
 
 /// Everything Shift can do to a file. Each action targets one `FileKind`.
+/// Compression and resizing live in presets, which you edit in Settings.
 public enum ShiftAction: Hashable, Sendable, Identifiable {
-    case webPreset
+    case imagePreset(ImagePreset)
     case convertImage(ImageFormat)
-    case resize(ResizeMode)
-    case compressImage
     case imagesToPDF
     case textToPDF
     case textToPlain
-    case compressPDF
+    case pdfPreset(PDFPreset)
     case pdfToImages(ImageFormat)
-    case compressVideo(height: Int)
+    case videoPreset(VideoPreset)
     case videoToMP4
     case extractAudio
     case audioToM4A
@@ -64,17 +63,14 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
 
     public var id: String {
         switch self {
-        case .webPreset: return "web"
+        case .imagePreset(let p): return "preset-\(p.id)"
+        case .videoPreset(let p): return "preset-\(p.id)"
+        case .pdfPreset(let p): return "preset-\(p.id)"
         case .convertImage(let f): return "convert-\(f.rawValue)"
-        case .resize(.percent(let p)): return "resize-\(p)pct"
-        case .resize(.longEdge(let px)): return "resize-\(px)"
-        case .compressImage: return "compress-image"
         case .imagesToPDF: return "images-to-pdf"
         case .textToPDF: return "text-to-pdf"
         case .textToPlain: return "text-to-txt"
-        case .compressPDF: return "compress-pdf"
         case .pdfToImages(let f): return "pdf-to-\(f.rawValue)"
-        case .compressVideo(let h): return "video-\(h)p"
         case .videoToMP4: return "video-mp4"
         case .extractAudio: return "extract-audio"
         case .audioToM4A: return "audio-m4a"
@@ -82,31 +78,33 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
         }
     }
 
-    public init?(id: String) {
-        let all: [ShiftAction] = [.webPreset, .compressImage, .imagesToPDF, .textToPDF, .textToPlain, .compressPDF,
-                                  .videoToMP4, .extractAudio, .audioToM4A,
-                                  .compressVideo(height: 1080), .compressVideo(height: 720)]
-            + ImageFormat.allCases.map { .convertImage($0) }
-            + ImageFormat.allCases.map { .pdfToImages($0) }
-            + FileKind.allCases.map { .toMarkdown($0) }
-        if let match = all.first(where: { $0.id == id }) { self = match; return }
-        if id.hasPrefix("resize-"), id.hasSuffix("pct"), let p = Int(id.dropFirst(7).dropLast(3)) {
-            self = .resize(.percent(p)); return
+    /// Actions that exist regardless of presets, per kind.
+    public static func builtIns(for kind: FileKind) -> [ShiftAction] {
+        switch kind {
+        case .image: return ImageFormat.allCases.map { .convertImage($0) } + [.imagesToPDF, .toMarkdown(.image)]
+        case .document: return [.textToPDF, .toMarkdown(.document), .textToPlain]
+        case .pdf: return [.toMarkdown(.pdf), .pdfToImages(.png), .pdfToImages(.jpeg)]
+        case .video: return [.videoToMP4, .extractAudio, .toMarkdown(.video)]
+        case .audio: return [.audioToM4A, .toMarkdown(.audio)]
+        case .other: return []
         }
-        if id.hasPrefix("resize-"), let px = Int(id.dropFirst(7)) {
-            self = .resize(.longEdge(px)); return
-        }
-        return nil
     }
 
     public var kind: FileKind {
         switch self {
-        case .webPreset, .convertImage, .resize, .compressImage, .imagesToPDF: return .image
+        case .imagePreset, .convertImage, .imagesToPDF: return .image
         case .textToPDF, .textToPlain: return .document
-        case .compressPDF, .pdfToImages: return .pdf
-        case .compressVideo, .videoToMP4, .extractAudio: return .video
+        case .pdfPreset, .pdfToImages: return .pdf
+        case .videoPreset, .videoToMP4, .extractAudio: return .video
         case .audioToM4A: return .audio
         case .toMarkdown(let kind): return kind
+        }
+    }
+
+    public var isPreset: Bool {
+        switch self {
+        case .imagePreset, .videoPreset, .pdfPreset: return true
+        default: return false
         }
     }
 
@@ -115,17 +113,14 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
 
     public var title: String {
         switch self {
-        case .webPreset: return "Web preset"
+        case .imagePreset(let p): return p.name
+        case .videoPreset(let p): return p.name
+        case .pdfPreset(let p): return p.name
         case .convertImage(let f): return "To \(f.displayName)"
-        case .resize(.percent(let p)): return "\(p)%"
-        case .resize(.longEdge(let px)): return "Max \(px) px"
-        case .compressImage: return "Compress"
         case .imagesToPDF: return "One PDF"
         case .textToPDF: return "To PDF"
         case .textToPlain: return "Plain text"
-        case .compressPDF: return "Compress"
         case .pdfToImages(let f): return "Pages to \(f.displayName)"
-        case .compressVideo(let h): return "Web \(h)p"
         case .videoToMP4: return "To MP4"
         case .extractAudio: return "Audio only"
         case .audioToM4A: return "To M4A"
@@ -135,22 +130,19 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
 
     public var subtitle: String {
         switch self {
-        case .webPreset:
-            return "WebP · max \(WebPreset.maxLongEdge) px · sRGB · no metadata"
+        case .imagePreset(let p): return p.summary
+        case .videoPreset(let p): return p.summary
+        case .pdfPreset(let p): return p.summary
         case .convertImage(.webp): return "Small and sharp, works across the web"
         case .convertImage(.avif): return "Even smaller than WebP"
         case .convertImage(.jpeg): return "Opens everywhere"
         case .convertImage(.png): return "Lossless, keeps transparency"
         case .convertImage(.heic): return "Apple format, small"
         case .convertImage(.tiff): return "Lossless, for print"
-        case .resize: return "Scales down, never up"
-        case .compressImage: return "Same dimensions, smaller file"
         case .imagesToPDF: return "All images in one document"
         case .textToPDF: return "A4, with page numbers"
         case .textToPlain: return "Formatting stripped, just the text"
-        case .compressPDF: return "Images at 144 dpi, JPEG"
         case .pdfToImages: return "Every page at 2x resolution"
-        case .compressVideo(let h): return "H.264 MP4, max \(h)p, streams fast"
         case .videoToMP4: return "Same quality, plays everywhere"
         case .extractAudio: return "Audio as M4A"
         case .audioToM4A: return "AAC in M4A"
@@ -164,23 +156,22 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
     /// SF Symbol name.
     public var symbol: String {
         switch self {
-        case .webPreset: return "globe"
+        case .imagePreset(let p):
+            switch (p.format, p.resize) {
+            case (.format(.webp), _), (.format(.avif), _): return "globe"
+            case (_, .none): return "arrow.down.to.line.compact"
+            default: return "arrow.down.right.and.arrow.up.left"
+            }
+        case .pdfPreset: return "arrow.down.to.line.compact"
         case .convertImage: return "arrow.triangle.2.circlepath"
-        case .resize: return "arrow.down.right.and.arrow.up.left"
-        case .compressImage, .compressPDF: return "arrow.down.to.line.compact"
         case .imagesToPDF, .textToPDF: return "doc.richtext"
         case .textToPlain: return "text.alignleft"
         case .pdfToImages: return "photo.on.rectangle"
-        case .compressVideo, .videoToMP4: return "film"
+        case .videoPreset, .videoToMP4: return "film"
         case .extractAudio, .audioToM4A: return "waveform"
         case .toMarkdown(.image): return "text.viewfinder"
         case .toMarkdown(.video), .toMarkdown(.audio): return "captions.bubble"
         case .toMarkdown: return "number"
         }
     }
-}
-
-public enum WebPreset {
-    public static let maxLongEdge = 2000
-    public static let quality = 0.78
 }

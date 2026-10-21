@@ -1,12 +1,15 @@
 import AppKit
 import QuickLookUI
+import ScreenCaptureKit
 import ShiftCore
+import SwiftUI
 
 /// Development aid: `SHIFT_SNAPSHOT=<dir> SHIFT_FILES=<a:b:c> Shift` renders each panel state to PNG and quits.
 /// Lets you check layout without Screen Recording permission.
 @MainActor
 enum DebugSnapshot {
-    static func runIfRequested(drop: DropController, shelf: ShelfController, store: ShelfStore) -> Bool {
+    static func runIfRequested(drop: DropController, shelf: ShelfController, store: ShelfStore,
+                               settings: SettingsWindowController) -> Bool {
         let env = ProcessInfo.processInfo.environment
         guard let dir = env["SHIFT_SNAPSHOT"].map({ URL(fileURLWithPath: $0) }) else { return false }
         let files = (env["SHIFT_FILES"] ?? "").split(separator: ":").map { URL(fileURLWithPath: String($0)) }
@@ -32,7 +35,7 @@ enum DebugSnapshot {
             drop.model.isDragging = false
             drop.model.dropSpot = nil
 
-            let report = await Processor.run(.webPreset, on: files.filter { FileKind.of($0) == .image },
+            let report = await Processor.run(.imagePreset(Presets.defaultImage[0]), on: files.filter { FileKind.of($0) == .image },
                                              outputDirectory: FileManager.default.temporaryDirectory.appendingPathComponent("shift-snapshot"))
             store.add(report.results)
             store.addOriginals(files.filter { FileKind.of($0) != .image })
@@ -54,6 +57,13 @@ enum DebugSnapshot {
                 try? await Task.sleep(for: .milliseconds(800))
                 print("after second space visible: \(preview.isVisible)")
             }
+
+            for pane in SettingsWindowController.Pane.allCases {
+                settings.closeForSnapshot()
+                settings.show(pane)
+                try? await Task.sleep(for: .milliseconds(3000))
+                if let window = settings.visibleWindow { await screenCapture(window, title: "settings-\(pane.rawValue)", to: dir) }
+            }
             NSApp.terminate(nil)
         }
         return true
@@ -62,6 +72,33 @@ enum DebugSnapshot {
     private static func key(_ code: UInt16, _ characters: String, in window: NSWindow) -> NSEvent {
         NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
                          context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code)!
+    }
+
+    /// Captures what is really on screen. Falls back to cacheDisplay when capture is not allowed.
+    private static func screenCapture(_ window: NSWindow, title: String, to dir: URL) async {
+        do {
+            let content = try await SCShareableContent.currentProcess
+            guard let target = content.windows.first(where: { $0.windowID == CGWindowID(window.windowNumber) }) else {
+                print("screen capture: window not found"); captureWindow(window, title: title, to: dir); return
+            }
+            let config = SCStreamConfiguration()
+            config.width = Int(target.frame.width * 2)
+            config.height = Int(target.frame.height * 2)
+            let image = try await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: target),
+                                                                   configuration: config)
+            let rep = NSBitmapImageRep(cgImage: image)
+            try rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent("\(title).png"))
+        } catch {
+            print("screen capture failed: \(error.localizedDescription)")
+            captureWindow(window, title: title, to: dir)
+        }
+    }
+
+    private static func captureWindow(_ window: NSWindow, title: String, to dir: URL) {
+        guard let view = window.contentView?.superview ?? window.contentView,
+              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent("\(title).png"))
     }
 
     private static func capture(title: String, to dir: URL) {

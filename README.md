@@ -15,14 +15,30 @@ Results stay in a floating shelf, ready to drag into the next tool.
 
 No Accessibility or Input Monitoring permission needed: Shift polls mouse, modifier and drag-pasteboard state.
 
+## Settings
+
+Open Settings from the menu bar icon (⌘,).
+
+- **General**: output folder, copy results to the clipboard, launch at login.
+- **Actions**: per file type, tick the actions that show up in the bar and drag them into your order. The first one is
+  the highlighted tile and runs on Return. Actions that would not change a file stay hidden on their own: To JPG for a
+  JPG, a resize preset for images that are already small enough, One PDF for a single image.
+- **Presets**: your own compression and resize options.
+  - Images: format (keep, smallest, or a fixed one), longest side or scale, quality.
+  - Video: resolution, quality, keep or drop audio. Always H.264 MP4.
+  - PDF: image quality and resolution.
+
+The web preset, Compress, 50%, the Max px sizes, Web 1080p/720p and PDF Compress are presets too: edit, duplicate or
+delete them. Settings live in the `men.stuur.shift` defaults domain, shared with the CLI.
+
 ## Actions
 
 | Files | Actions |
 | --- | --- |
-| Images | **Web preset** (WebP, max 2000 px long edge, quality 78, sRGB, metadata stripped), convert to JPG/PNG/WebP/AVIF (suggested per source format), compress, 50% / max 1920 / 1280 / 640 px, combine into one PDF, Markdown via OCR |
+| Images | Presets: **Web preset** (WebP, max 2000 px long edge, quality 78), Compress, 50%, max 1920 / 1280 / 640 px. Convert to JPG/PNG/WebP (AVIF, HEIC, TIFF in Settings), combine into one PDF, Markdown via OCR. Always sRGB, metadata stripped |
 | Text (md, txt, docx, rtf, html, code) | PDF (A4, page numbers, Markdown rendered), Markdown (headings, lists, links, tables), plain text |
-| PDF | Compress (images to JPEG at 144 dpi), Markdown (paragraphs rebuilt from line positions), pages to PNG or JPG |
-| Video | Web 1080p / 720p (H.264 MP4, capped bitrate), MP4, extract audio, Markdown transcript |
+| PDF | Compress preset (images to JPEG at 144 dpi), Markdown (paragraphs rebuilt from line positions), pages to PNG or JPG |
+| Video | Presets Web 1080p / 720p (H.264 MP4, capped bitrate), MP4, extract audio, Markdown transcript |
 | Audio | M4A, Markdown transcript |
 | Anything else | Park on the shelf |
 
@@ -51,7 +67,8 @@ The same engine is available from the terminal:
 
 ```bash
 dist/shift-cli suggest photo.heic notes.md
-dist/shift-cli web --out ~/Desktop/web *.jpg
+dist/shift-cli web --out ~/Desktop/web *.jpg        # "web" is short for preset-web
+dist/shift-cli preset-video-720 clip.mov            # any preset id shown by suggest
 ```
 
 ## Layout
