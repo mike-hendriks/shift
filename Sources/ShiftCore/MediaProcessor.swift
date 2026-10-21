@@ -1,7 +1,8 @@
 import AVFoundation
 
 enum MediaProcessor {
-    static func export(_ url: URL, preset: String, fileType: AVFileType, to output: URL) async throws {
+    static func export(_ url: URL, preset: String, fileType: AVFileType, to output: URL,
+                       timeRange: CMTimeRange? = nil) async throws {
         let asset = AVURLAsset(url: url)
         if preset == AVAssetExportPresetAppleM4A, try await asset.loadTracks(withMediaType: .audio).isEmpty {
             throw ShiftError.failed("\(url.lastPathComponent) heeft geen audio")
@@ -10,6 +11,7 @@ enum MediaProcessor {
             throw ShiftError.failed("Exporteren kan niet voor \(url.lastPathComponent)")
         }
         session.shouldOptimizeForNetworkUse = true
+        if let timeRange { session.timeRange = timeRange }
         try await session.export(to: output, as: fileType)
     }
 

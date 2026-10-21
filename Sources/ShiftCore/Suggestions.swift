@@ -24,14 +24,15 @@ public enum Suggestions {
         case .document:
             let rich: Set<String> = ["doc", "docx", "odt", "rtf", "rtfd", "html", "htm", "pages"]
             let hasRich = files.contains { rich.contains($0.pathExtension.lowercased()) }
-            return hasRich ? [.textToPDF, .textToPlain] : [.textToPDF]
-        case .pdf: return [.compressPDF, .pdfToImages(.png), .pdfToImages(.jpeg)]
+            let allMarkdown = files.allSatisfy { ["md", "markdown"].contains($0.pathExtension.lowercased()) }
+            return [.textToPDF] + (allMarkdown ? [] : [.toMarkdown(.document)]) + (hasRich ? [.textToPlain] : [])
+        case .pdf: return [.compressPDF, .toMarkdown(.pdf), .pdfToImages(.png), .pdfToImages(.jpeg)]
         case .video:
             let allMP4 = files.allSatisfy { $0.pathExtension.lowercased() == "mp4" }
             return [.compressVideo(height: 1080), .compressVideo(height: 720)]
                 + (allMP4 ? [] : [.videoToMP4])
-                + [.extractAudio]
-        case .audio: return [.audioToM4A]
+                + [.extractAudio, .toMarkdown(.video)]
+        case .audio: return [.audioToM4A, .toMarkdown(.audio)]
         case .other: return []
         }
     }
@@ -61,6 +62,7 @@ public enum Suggestions {
         actions += [1920, 1280, 640].filter { CGFloat($0) < largest }.map { .resize(.longEdge($0)) }
 
         if files.count > 1 { actions.append(.imagesToPDF) }
+        actions.append(.toMarkdown(.image))
         return actions
     }
 }

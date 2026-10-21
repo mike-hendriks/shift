@@ -34,7 +34,7 @@ enum DocumentProcessor {
         ])
     }
 
-    private static func isCode(_ url: URL) -> Bool {
+    static func isCode(_ url: URL) -> Bool {
         guard let type = contentType(of: url) else { return false }
         return type.conforms(to: .sourceCode) || type.conforms(to: .json) || type.conforms(to: .xml)
             || type.conforms(to: .yaml) || type.conforms(to: .commaSeparatedText) || type.conforms(to: .shellScript)

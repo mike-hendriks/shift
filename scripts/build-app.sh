@@ -32,6 +32,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key><string>15.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSSpeechRecognitionUsageDescription</key><string>Shift zet gesproken tekst uit audio en video om naar Markdown, op je Mac zelf.</string>
     <key>NSDownloadsFolderUsageDescription</key><string>Shift zet bewerkte bestanden standaard in Downloads/Shift.</string>
 </dict>
 </plist>

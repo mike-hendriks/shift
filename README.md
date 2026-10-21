@@ -18,12 +18,16 @@ No Accessibility or Input Monitoring permission needed: Shift polls mouse, modif
 
 | Files | Actions |
 | --- | --- |
-| Images | **Web preset** (WebP, max 2000 px long edge, quality 78, sRGB, metadata stripped), convert to JPG/PNG/WebP/AVIF (suggested per source format), compress, 50% / max 1920 / 1280 / 640 px, combine into one PDF |
-| Text (md, txt, docx, rtf, html, code) | PDF (A4, page numbers, Markdown rendered), plain text |
-| PDF | Compress (images to JPEG at 144 dpi), pages to PNG or JPG |
-| Video | Web 1080p / 720p (H.264 MP4, capped bitrate), MP4, extract audio |
-| Audio | M4A |
+| Images | **Web preset** (WebP, max 2000 px long edge, quality 78, sRGB, metadata stripped), convert to JPG/PNG/WebP/AVIF (suggested per source format), compress, 50% / max 1920 / 1280 / 640 px, combine into one PDF, Markdown via OCR |
+| Text (md, txt, docx, rtf, html, code) | PDF (A4, page numbers, Markdown rendered), Markdown (headings, lists, links, tables), plain text |
+| PDF | Compress (images to JPEG at 144 dpi), Markdown (paragraphs rebuilt from line positions), pages to PNG or JPG |
+| Video | Web 1080p / 720p (H.264 MP4, capped bitrate), MP4, extract audio, Markdown transcript |
+| Audio | M4A, Markdown transcript |
 | Anything else | Park on the shelf |
+
+Transcripts run on-device (macOS 26). The language is detected by transcribing a 30 second sample in each of
+your preferred languages and keeping the most confident one. Dutch goes through DictationTranscriber, which
+covers languages SpeechTranscriber does not. The first run per language downloads the speech model.
 
 Compression never ships a bigger file: if the result is larger, the original is kept.
 Output goes to `~/Downloads/Shift` (change it from the menu bar icon).

@@ -208,6 +208,17 @@ public enum Processor {
             try await MediaProcessor.transcodeForWeb(file, maxShortEdge: .max, bitsPerPixel: 0.15, sourceCap: 1.5, to: out)
             return [ShiftResult(sources: files, output: out)]
 
+        case .toMarkdown(let kind):
+            let out = OutputNamer.url(for: file, suffix: nil, ext: "md", in: dir)
+            switch kind {
+            case .document: try await MainActor.run { try MarkdownConverter.document(file, output: out) }
+            case .pdf: try MarkdownConverter.pdf(file, output: out)
+            case .image: try MarkdownConverter.image(file, output: out)
+            case .video, .audio: try await MarkdownConverter.transcribe(file, output: out)
+            case .other: throw ShiftError.failed("\(file.lastPathComponent) kan niet naar Markdown")
+            }
+            return [ShiftResult(sources: files, output: out)]
+
         case .extractAudio, .audioToM4A:
             let out = OutputNamer.url(for: file, suffix: nil, ext: "m4a", in: dir)
             try await MediaProcessor.export(file, preset: AVAssetExportPresetAppleM4A, fileType: .m4a, to: out)

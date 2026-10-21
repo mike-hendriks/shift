@@ -59,6 +59,8 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
     case videoToMP4
     case extractAudio
     case audioToM4A
+    /// Text out of anything: document conversion, PDF text, OCR for images, transcription for audio and video.
+    case toMarkdown(FileKind)
 
     public var id: String {
         switch self {
@@ -76,6 +78,7 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
         case .videoToMP4: return "video-mp4"
         case .extractAudio: return "extract-audio"
         case .audioToM4A: return "audio-m4a"
+        case .toMarkdown(let kind): return "markdown-\(kind.rawValue)"
         }
     }
 
@@ -85,6 +88,7 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
                                   .compressVideo(height: 1080), .compressVideo(height: 720)]
             + ImageFormat.allCases.map { .convertImage($0) }
             + ImageFormat.allCases.map { .pdfToImages($0) }
+            + FileKind.allCases.map { .toMarkdown($0) }
         if let match = all.first(where: { $0.id == id }) { self = match; return }
         if id.hasPrefix("resize-"), id.hasSuffix("pct"), let p = Int(id.dropFirst(7).dropLast(3)) {
             self = .resize(.percent(p)); return
@@ -102,6 +106,7 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
         case .compressPDF, .pdfToImages: return .pdf
         case .compressVideo, .videoToMP4, .extractAudio: return .video
         case .audioToM4A: return .audio
+        case .toMarkdown(let kind): return kind
         }
     }
 
@@ -124,6 +129,7 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
         case .videoToMP4: return "Naar MP4"
         case .extractAudio: return "Alleen audio"
         case .audioToM4A: return "Naar M4A"
+        case .toMarkdown: return "Naar Markdown"
         }
     }
 
@@ -148,6 +154,10 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
         case .videoToMP4: return "Zelfde kwaliteit, beter compatibel"
         case .extractAudio: return "Audio als M4A"
         case .audioToM4A: return "AAC in M4A"
+        case .toMarkdown(.image): return "Tekst herkennen (OCR)"
+        case .toMarkdown(.pdf): return "Tekst met koppen en lijsten"
+        case .toMarkdown(.video), .toMarkdown(.audio): return "Transcriptie met tijdcodes"
+        case .toMarkdown: return "Koppen, lijsten, links en tabellen"
         }
     }
 
@@ -163,6 +173,9 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
         case .pdfToImages: return "photo.on.rectangle"
         case .compressVideo, .videoToMP4: return "film"
         case .extractAudio, .audioToM4A: return "waveform"
+        case .toMarkdown(.image): return "text.viewfinder"
+        case .toMarkdown(.video), .toMarkdown(.audio): return "captions.bubble"
+        case .toMarkdown: return "number"
         }
     }
 }
