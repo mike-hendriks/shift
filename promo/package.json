@@ -1,0 +1,18 @@
+{
+  "name": "promo",
+  "version": "1.0.0",
+  "description": "Release film for Shift",
+  "main": "index.js",
+  "scripts": {
+    "build": "node render.mjs",
+    "preview": "open index.html#play"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "playwright-core": "^1.48.2"
+  },
+  "type": "module"
+}
