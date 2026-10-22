@@ -43,6 +43,18 @@ enum DebugSnapshot {
             try? await Task.sleep(for: .milliseconds(1500))
             capture(title: "shelf", to: dir)
 
+            // What would receive a mouse down: rows must hit a drag source, the header the window handle.
+            if let shelfPanel = NSApp.windows.compactMap({ $0 as? FloatingPanel }).first(where: { $0.previewController != nil }),
+               let content = shelfPanel.contentView {
+                let height = content.bounds.height
+                for (name, point) in [("header left", CGPoint(x: 60, y: height - 20)), ("header middle", CGPoint(x: 120, y: height - 20)), ("drag all", CGPoint(x: 180, y: height - 20)),
+                                      ("row 1 name", CGPoint(x: 120, y: height - 75)), ("row 1 thumb", CGPoint(x: 30, y: height - 75)),
+                                      ("row 2 name", CGPoint(x: 120, y: height - 131))] {
+                    let hit = content.hitTest(point)
+                    print("hit \(name): \(hit.map { String(describing: type(of: $0)) } ?? "nil"), moves window: \(hit?.mouseDownCanMoveWindow ?? false), panel movable: \(shelfPanel.isMovableByWindowBackground)")
+                }
+            }
+
             // Press Space on the shelf, then Down, and report what Quick Look shows.
             if let shelfPanel = NSApp.windows.compactMap({ $0 as? FloatingPanel }).first(where: { $0.previewController != nil }) {
                 store.selection = store.items.first?.id

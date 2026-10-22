@@ -100,7 +100,8 @@ final class ShelfController {
         self.store = store
         panel = FloatingPanel(rootView: ShelfView(store: store, settings: settings, onDragChanged: onDragChanged,
                                                   onClose: { [weak self] in self?.close() }))
-        panel.isMovableByWindowBackground = true
+        // Only the header moves the window; everywhere else, a drag picks up files.
+        panel.isMovableByWindowBackground = false
         quickLook = ShelfQuickLook(store: store)
         panel.previewController = quickLook
         panel.onKeyDown = { [weak self] in self?.handleKey($0) ?? false }
@@ -220,12 +221,20 @@ struct ShelfView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "shift.fill").font(.system(size: 13, weight: .bold))
-            Text(store.items.isEmpty ? "Shift" : "\(store.items.count) ready")
-                .font(.system(size: 13, weight: .semibold))
-                .lineLimit(1)
-                .fixedSize()
-            Spacer()
+            // Title and empty space form the handle that moves the shelf; the buttons stay clickable.
+            HStack(spacing: 8) {
+                Image(systemName: "shift.fill").font(.system(size: 13, weight: .bold))
+                Text(store.items.isEmpty ? "Shift" : "\(store.items.count) ready")
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                    .fixedSize()
+                Spacer(minLength: 8)
+            }
+            .padding(.leading, 14)
+            .padding(.vertical, 11)
+            .overlay(WindowDragArea())
+            .help("Drag here to move the shelf")
+
             if store.items.count > 1 {
                 DragAllButton(urls: store.items.map(\.url), onDragChanged: onDragChanged)
             }
@@ -247,8 +256,10 @@ struct ShelfView: View {
             }
             IconButton(symbol: "xmark", help: "Close and clear", action: onClose)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.trailing, 14)
+        .overlay(alignment: .top) {
+            Capsule().fill(Color.primary.opacity(0.18)).frame(width: 34, height: 4).padding(.top, 4).allowsHitTesting(false)
+        }
     }
 
     private var emptyState: some View {

@@ -43,6 +43,8 @@ echo "Built $APP"
 
 if [[ "${1:-}" == "--install" ]]; then
     pkill -x Shift || true
+    # Wait for the running copy to quit, or `open` fails while it is still shutting down.
+    for _ in {1..50}; do pgrep -x Shift >/dev/null || break; sleep 0.1; done
     rm -rf /Applications/Shift.app
     cp -R "$APP" /Applications/
     open /Applications/Shift.app
