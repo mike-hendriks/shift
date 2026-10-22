@@ -30,5 +30,8 @@ jobs:
       - name: Build, sign and publish
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          # Fixed signing certificate, so macOS keeps file permissions across updates.
+          SIGNING_CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}
+          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
           GH_TOKEN: ${{ github.token }}
         run: scripts/release.sh "${GITHUB_REF_NAME#v}" --publish

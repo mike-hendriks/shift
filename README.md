@@ -99,9 +99,21 @@ with the Sparkle EdDSA key and writes `appcast.xml`. Both are attached to the Gi
 
 ### Code signing
 
-Builds are ad-hoc signed for now. With an Apple Developer ID, set `SIGN_IDENTITY` to the Developer ID Application
-identity and add notarization (`xcrun notarytool submit --wait`, then `xcrun stapler staple`) to `scripts/release.sh`;
-the build script already enables the hardened runtime when a real identity is set.
+macOS remembers file permissions (Desktop, Documents, Downloads) per app signature. Ad-hoc signatures change with
+every build, which made macOS ask again after every update. Builds are therefore signed with one self-signed
+certificate, "Shift Code Signing", so the signature stays the same and permissions granted once stay granted.
+
+- CI imports it from the secrets `SIGNING_CERT_P12` (base64) and `SIGNING_CERT_PASSWORD` into a temporary keychain.
+- Locally it lives in `~/Library/Keychains/shift-signing.keychain-db`, unlocked with the password in
+  `~/.config/shift/signing-keychain-password`. On another Mac: `scripts/setup-signing.sh shift-signing.p12 <password>`.
+- Without the certificate, `scripts/build-app.sh` falls back to ad-hoc signing and says so.
+- Keep `~/.config/shift/shift-signing.p12` and its password in a password manager. Losing it is not fatal: a new
+  certificate only means users grant file access once more.
+
+A self-signed certificate does not satisfy Gatekeeper, so the first launch still needs Open Anyway. With an Apple
+Developer ID, set `SIGN_IDENTITY` to the Developer ID Application identity and add notarization
+(`xcrun notarytool submit --wait`, then `xcrun stapler staple`) to `scripts/release.sh`; the build script enables the
+hardened runtime and a secure timestamp for Developer ID identities.
 
 ## CLI
 
