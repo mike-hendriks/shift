@@ -42,6 +42,9 @@ SPARKLE=.build/release/Sparkle.framework
 [[ -d "$SPARKLE" ]] || SPARKLE=$(find .build/artifacts -path "*macos*/Sparkle.framework" -maxdepth 6 | head -1)
 ditto "$SPARKLE" "$APP/Contents/Frameworks/Sparkle.framework"
 
+# Onboarding videos, rendered from the release film with a calm camera by promo/clips.mjs.
+ditto Resources/Onboarding "$APP/Contents/Resources/Onboarding"
+
 ICONSET=$(mktemp -d)/Shift.iconset
 swift scripts/make-icon.swift "$ICONSET"
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/Shift.icns"

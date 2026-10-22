@@ -42,6 +42,8 @@ public struct ShiftSettings: Codable, Equatable, Sendable {
     /// Per `FileKind.rawValue`: which actions appear in the bar, in order.
     public var layout: [String: [ActionEntry]]
     public var outputDirectory: String?
+    /// Save results next to each original instead of in the output folder.
+    public var saveNextToOriginal: Bool
     public var copyResultsToClipboard: Bool
     public var triggerModifiers: TriggerModifiers
     /// What the Crop… form starts with: new copies or replacing originals, compressed or not.
@@ -53,6 +55,7 @@ public struct ShiftSettings: Codable, Equatable, Sendable {
         pdfPresets: Presets.defaultPDF,
         layout: defaultLayout,
         outputDirectory: nil,
+        saveNextToOriginal: false,
         copyResultsToClipboard: false,
         triggerModifiers: .shift,
         cropDefaults: CropOptions()
@@ -77,13 +80,14 @@ public struct ShiftSettings: Codable, Equatable, Sendable {
     }()
 
     public init(imagePresets: [ImagePreset], videoPresets: [VideoPreset], pdfPresets: [PDFPreset],
-                layout: [String: [ActionEntry]], outputDirectory: String?, copyResultsToClipboard: Bool,
+                layout: [String: [ActionEntry]], outputDirectory: String?, saveNextToOriginal: Bool, copyResultsToClipboard: Bool,
                 triggerModifiers: TriggerModifiers, cropDefaults: CropOptions) {
         self.imagePresets = imagePresets
         self.videoPresets = videoPresets
         self.pdfPresets = pdfPresets
         self.layout = layout
         self.outputDirectory = outputDirectory
+        self.saveNextToOriginal = saveNextToOriginal
         self.copyResultsToClipboard = copyResultsToClipboard
         self.triggerModifiers = triggerModifiers
         self.cropDefaults = cropDefaults
@@ -98,6 +102,7 @@ public struct ShiftSettings: Codable, Equatable, Sendable {
         pdfPresets = try c.decodeIfPresent([PDFPreset].self, forKey: .pdfPresets) ?? d.pdfPresets
         layout = try c.decodeIfPresent([String: [ActionEntry]].self, forKey: .layout) ?? d.layout
         outputDirectory = try c.decodeIfPresent(String.self, forKey: .outputDirectory)
+        saveNextToOriginal = try c.decodeIfPresent(Bool.self, forKey: .saveNextToOriginal) ?? d.saveNextToOriginal
         copyResultsToClipboard = try c.decodeIfPresent(Bool.self, forKey: .copyResultsToClipboard) ?? d.copyResultsToClipboard
         let trigger = try c.decodeIfPresent(TriggerModifiers.self, forKey: .triggerModifiers) ?? d.triggerModifiers
         triggerModifiers = trigger.isEmpty ? d.triggerModifiers : trigger
@@ -131,6 +136,9 @@ public struct ShiftSettings: Codable, Equatable, Sendable {
     public var outputURL: URL {
         outputDirectory.map { URL(fileURLWithPath: $0) } ?? Processor.defaultOutputDirectory
     }
+
+    /// Where results go: the output folder, or nil for next to each original.
+    public var resultDirectory: URL? { saveNextToOriginal ? nil : outputURL }
 
     // MARK: Actions
 

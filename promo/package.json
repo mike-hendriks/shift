@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "node render.mjs",
+    "clips": "node clips.mjs",
     "preview": "open index.html#play"
   },
   "keywords": [],

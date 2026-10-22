@@ -601,8 +601,21 @@ function cursorPath() {
   ];
 }
 
+// The onboarding clips render with "onboarding" in the hash: the film's zoom levels, but only on the beats that matter,
+// held longer: wide, the files, out for the bar, in on the shelf, out again for the paste. The release film is unchanged.
+const ONBOARDING = location.hash.includes('onboarding');
+const CAM_ONBOARDING = [
+  [12.0, 960, 540, 1.0], [12.7, 960, 540, 1.0],
+  [13.4, 520, 520, 1.32], [14.2, 520, 520, 1.32],      // the files, while one is picked up
+  [15.1, 960, 540, 1.0], [18.9, 960, 540, 1.0],        // the whole screen: the bar slides in, drop on Web preset
+  [19.7, 1600, 200, 1.75], [20.95, 1600, 200, 1.75],   // the shelf with the saving
+  [21.9, 960, 540, 1.0], [23.7, 960, 540, 1.0],        // out again, the result is dragged into the CMS
+  [24.3, 470, 520, 1.42], [25.3, 470, 520, 1.42],      // batch: the files
+  [26.0, 960, 540, 1.0], [27.85, 960, 540, 1.0],       // the bar, sorted by type
+  [28.45, 1600, 210, 1.6], [28.8, 1600, 210, 1.6],     // the shelf fills up
+];
 function camera(t) {
-  const [fx0, fy0, z] = keys(t, CAM);
+  const [fx0, fy0, z] = keys(t, ONBOARDING ? CAM_ONBOARDING : CAM);
   const hw = W / (2 * z), hh = H / (2 * z);
   const fx = z >= 1 ? clamp(fx0, hw, W - hw) : 960, fy = z >= 1 ? clamp(fy0, hh, H - hh) : 540;
   return { x: W / 2 - fx * z, y: H / 2 - fy * z, z };

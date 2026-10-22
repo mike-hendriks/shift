@@ -20,5 +20,8 @@ npm install
 npm run build      # renders frames, generates the soundtrack, encodes shift-release.mp4
 ```
 
+`npm run clips` renders the two onboarding clips in the app (`Resources/Onboarding`) from the same film, silent, at
+1280×720, with their own camera (`#render-onboarding`): the film's zoom levels on fewer beats, held longer.
+
 `index.html` is the whole film: `render(t)` draws the frame at time `t`, so every frame is deterministic.
 Open it in Chrome with `#t=17.5` to inspect a moment, or `#play` to preview in real time (no sound).

@@ -71,14 +71,17 @@ public enum Processor {
 
 
     /// Runs an action on all files, a few at a time. Failures are collected per file instead of stopping the batch.
-    public static func run(_ action: ShiftAction, on files: [URL], outputDirectory: URL,
+    /// A nil `outputDirectory` saves every result next to its original.
+    public static func run(_ action: ShiftAction, on files: [URL], outputDirectory: URL?,
                            progress: (@Sendable (Int, Int) -> Void)? = nil) async -> ShiftReport {
         var report = ShiftReport()
-        do {
-            try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
-        } catch {
-            report.failures = files.map { ($0, error.localizedDescription) }
-            return report
+        if let outputDirectory {
+            do {
+                try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+            } catch {
+                report.failures = files.map { ($0, error.localizedDescription) }
+                return report
+            }
         }
 
         if action.isCombining {
@@ -120,8 +123,9 @@ public enum Processor {
         return report
     }
 
-    private static func process(_ action: ShiftAction, _ files: [URL], _ dir: URL) async throws -> [ShiftResult] {
+    private static func process(_ action: ShiftAction, _ files: [URL], _ outputDirectory: URL?) async throws -> [ShiftResult] {
         let file = files[0]
+        let dir = outputDirectory ?? file.deletingLastPathComponent()
         switch action {
         case .imagePreset(let preset):
             let image = try ImageProcessor.load(file, crop: preset.crop, resize: preset.resize.mode)

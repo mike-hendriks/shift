@@ -8,7 +8,7 @@ func usage() -> Never {
     print("""
     Usage:
       shift-cli suggest <files...>
-      shift-cli <action-id> [--out <dir>] <files...>
+      shift-cli <action-id> [--out <dir> | --next-to-original] <files...>
       shift-cli crop [--top N] [--right N] [--bottom N] [--left N] [--aspect W:H] [--compress] [--overwrite] [--out <dir>] <files...>
 
     Run `shift-cli suggest <file>` to see the action ids for a file.
@@ -21,7 +21,11 @@ guard let command = args.first else { usage() }
 args.removeFirst()
 
 let settings = ShiftSettings.load()
-var outputDirectory = settings.outputURL
+var outputDirectory = settings.resultDirectory
+if let i = args.firstIndex(of: "--next-to-original") {
+    outputDirectory = nil
+    args.remove(at: i)
+}
 if let i = args.firstIndex(of: "--out"), i + 1 < args.count {
     outputDirectory = URL(fileURLWithPath: args[i + 1])
     args.removeSubrange(i...(i + 1))

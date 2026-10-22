@@ -9,11 +9,34 @@ import SwiftUI
 @MainActor
 enum DebugSnapshot {
     static func runIfRequested(drop: DropController, shelf: ShelfController, store: ShelfStore,
-                               settings: SettingsWindowController) -> Bool {
+                               settings: SettingsWindowController, onboarding: OnboardingController) -> Bool {
         let env = ProcessInfo.processInfo.environment
         guard let dir = env["SHIFT_SNAPSHOT"].map({ URL(fileURLWithPath: $0) }) else { return false }
         let files = (env["SHIFT_FILES"] ?? "").split(separator: ":").map { URL(fileURLWithPath: String($0)) }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        if env["SHIFT_SNAPSHOT_ONBOARDING"] != nil {
+            Task {
+                for step in OnboardingModel.Step.allCases {
+                    onboarding.show(step: step)
+                    try? await Task.sleep(for: .milliseconds(step == .welcome ? 4000 : 2500))
+                    if let window = onboarding.visibleWindow { await screenCapture(window, title: "onboarding-\(step.rawValue)", to: dir) }
+                }
+                // The tutorial once the bar has shown and the demo photo went through the web preset.
+                onboarding.show(step: .tryIt)
+                try? await Task.sleep(for: .milliseconds(1500))
+                if let demo = onboarding.model.demoFile {
+                    NotificationCenter.default.post(name: .shiftBarDidShow, object: [demo])
+                    let report = await Processor.run(.imagePreset(Presets.defaultImage[0]), on: [demo],
+                                                     outputDirectory: FileManager.default.temporaryDirectory.appendingPathComponent("shift-snapshot"))
+                    NotificationCenter.default.post(name: .shiftDidProcess, object: report.results)
+                    try? await Task.sleep(for: .milliseconds(1500))
+                    if let window = onboarding.visibleWindow { await screenCapture(window, title: "onboarding-tryit-done", to: dir) }
+                }
+                NSApp.terminate(nil)
+            }
+            return true
+        }
 
         Task {
             drop.present(files, dragging: true)

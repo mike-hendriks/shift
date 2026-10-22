@@ -122,17 +122,26 @@ struct GeneralPane: View {
     var body: some View {
         Form {
             Section("Output") {
-                LabeledContent("Save files to") {
-                    HStack {
-                        Text(store.settings.outputURL.path(percentEncoded: false))
-                            .lineLimit(1).truncationMode(.middle)
-                            .foregroundStyle(.secondary)
-                        Button("Choose…", action: chooseFolder)
-                        Button("Show") { NSWorkspace.shared.open(store.settings.outputURL) }
-                    }
+                Picker("Save results", selection: store.binding(\.saveNextToOriginal)) {
+                    Text("In a folder").tag(false)
+                    Text("Next to the original").tag(true)
                 }
-                if store.settings.outputDirectory != nil {
-                    Button("Use Downloads/Shift") { store.settings.outputDirectory = nil }
+                if store.settings.saveNextToOriginal {
+                    Text("Every result lands in the same folder as the file it came from.")
+                        .font(.callout).foregroundStyle(.secondary)
+                } else {
+                    LabeledContent("Folder") {
+                        HStack {
+                            Text(store.settings.outputURL.path(percentEncoded: false))
+                                .lineLimit(1).truncationMode(.middle)
+                                .foregroundStyle(.secondary)
+                            Button("Choose…", action: chooseFolder)
+                            Button("Show") { NSWorkspace.shared.open(store.settings.outputURL) }
+                        }
+                    }
+                    if store.settings.outputDirectory != nil {
+                        Button("Use Downloads/Shift") { store.settings.outputDirectory = nil }
+                    }
                 }
             }
             Section("Cropping") {
@@ -143,7 +152,7 @@ struct GeneralPane: View {
                 Toggle("Compress by default", isOn: store.binding(\.cropDefaults.compress))
                 Text(store.settings.cropDefaults.overwrite
                      ? "Crop… starts on Replace. Originals go to the Trash first, so you can get them back."
-                     : "Crop… starts on New files: a -cropped copy in your output folder, originals untouched.")
+                     : "Crop… starts on New files: a -cropped copy, originals untouched.")
                     .font(.callout).foregroundStyle(.secondary)
                 Text("You can still switch either option in the crop form each time.")
                     .font(.callout).foregroundStyle(.secondary)

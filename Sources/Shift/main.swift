@@ -12,12 +12,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let settings = SettingsStore()
     private let updater = Updater()
     private var settingsWindow: SettingsWindowController!
+    private var onboarding: OnboardingController!
     private var cancellables: Set<AnyCancellable> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         shelf = ShelfController(store: shelfStore, settings: settings) { [weak self] dragging in self?.watcher.isSuppressed = dragging }
         drop = DropController(shelf: shelfStore, settings: settings)
         settingsWindow = SettingsWindowController(store: settings, updater: updater)
+        onboarding = OnboardingController(settings: settings)
 
         watcher.onTriggerDrag = { [weak self] _ in self?.drop.showForDrag() }
         settings.$settings
@@ -30,12 +32,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         setUpStatusItem()
         setUpMainMenu()
-        if DebugSnapshot.runIfRequested(drop: drop, shelf: shelf, store: shelfStore, settings: settingsWindow) { return }
+        if DebugSnapshot.runIfRequested(drop: drop, shelf: shelf, store: shelfStore, settings: settingsWindow, onboarding: onboarding) { return }
 
-        if !UserDefaults.standard.bool(forKey: "hasLaunched") {
-            UserDefaults.standard.set(true, forKey: "hasLaunched")
-            shelf.show(hint: true)
-        }
+        // The shelf no longer opens empty on first launch: people dropped files on it. The onboarding explains Shift
+        // instead, once, including to everyone updating from a version without it.
+        if onboarding.needsOnboarding { onboarding.show() }
     }
 
     // MARK: Menu bar
@@ -50,11 +51,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        menu.addItem(item("Show Shelf", #selector(showShelf), key: ""))
+        if !shelfStore.items.isEmpty { menu.addItem(item("Show Shelf", #selector(showShelf), key: "")) }
         menu.addItem(item("Choose Files…", #selector(chooseFiles), key: "o"))
         menu.addItem(.separator())
-        menu.addItem(item("Open Output Folder", #selector(openOutput), key: ""))
+        if !settings.settings.saveNextToOriginal { menu.addItem(item("Open Output Folder", #selector(openOutput), key: "")) }
         menu.addItem(item("Settings…", #selector(showSettings), key: ","))
+        menu.addItem(item("Show Tutorial…", #selector(showTutorial), key: ""))
         if Updater.isConfigured { menu.addItem(item("Check for Updates…", #selector(checkForUpdates), key: "")) }
         menu.addItem(.separator())
         menu.addItem(item("Quit Shift", #selector(quit), key: "q"))
@@ -98,7 +100,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return item
     }
 
-    @objc private func showShelf() { shelf.show(hint: true) }
+    @objc private func showShelf() { shelf.show() }
+
+    @objc private func showTutorial() { onboarding.show() }
 
     @objc private func chooseFiles() {
         let panel = NSOpenPanel()

@@ -9,6 +9,10 @@ Results stay in a floating shelf, ready to drag into the next tool. Free for mac
 
 ## How it works
 
+On first launch, and once after updating from a version without it, Shift opens a short onboarding: a video of the
+flow, a hands-on try with a demo photo, and where results should go. Reopen it with Show Tutorial… in the menu bar.
+
+
 1. Drag one or more files anywhere (Finder, desktop, any app that drags real files).
 2. Hold **Shift** while dragging (or the keys you set in Settings → General). A bar slides in at the top of the screen (full width, at most 1600 px), under the menu bar,
    with large tiles for the actions that fit what you are dragging.
@@ -23,7 +27,8 @@ No Accessibility or Input Monitoring permission needed: Shift polls mouse, modif
 
 Open Settings from the menu bar icon (⌘,).
 
-- **General**: output folder, copy results to the clipboard, launch at login, and the trigger: any combination of
+- **General**: save results in a folder or next to the original, copy results to the clipboard, launch at login,
+  crop defaults, and the trigger: any combination of
   ⌃ ⌥ ⇧ ⌘ fn to hold while dragging. Click the keys or press Record and hold the combination.
 - **Actions**: per file type, tick the actions that show up in the bar and drag them into your order. The first one is
   the highlighted tile and runs on Return. Actions that would not change a file stay hidden on their own: To JPG for a
@@ -123,6 +128,7 @@ The same engine is available from the terminal:
 dist/shift-cli suggest photo.heic notes.md
 dist/shift-cli web --out ~/Desktop/web *.jpg        # "web" is short for preset-web
 dist/shift-cli preset-video-720 clip.mov            # any preset id shown by suggest
+dist/shift-cli web --next-to-original *.jpg          # results beside each original
 dist/shift-cli crop --bottom 200 *.png              # also --top, --left, --right, --aspect 16:9, --compress, --overwrite
 ```
 

@@ -3,6 +3,13 @@ import ImageIO
 import ShiftCore
 import SwiftUI
 
+extension Notification.Name {
+    /// The action bar opened for a drag; the object is the dragged files.
+    static let shiftBarDidShow = Notification.Name("ShiftBarDidShow")
+    /// An action finished; the object is the `[ShiftResult]`.
+    static let shiftDidProcess = Notification.Name("ShiftDidProcess")
+}
+
 /// A place in the bar you can drop files on.
 enum DropSpot: Hashable {
     case action(Int)
@@ -107,6 +114,7 @@ final class DropController {
         guard !files.isEmpty else { return }
         log.notice("Bar shown for a drag of \(files.count) files")
         show(files, dragging: true)
+        NotificationCenter.default.post(name: .shiftBarDidShow, object: files)
     }
 
     func dragEnded() {
@@ -197,12 +205,13 @@ final class DropController {
         model.done = 0
         model.total = files.count
         dropTarget.isHidden = true
-        let directory = settings.settings.outputURL
+        let directory = settings.settings.resultDirectory
         Task {
             let report = await Processor.run(action, on: files, outputDirectory: directory) { done, _ in
                 Task { @MainActor in self.model.done = done }
             }
             shelf.add(report.results)
+            NotificationCenter.default.post(name: .shiftDidProcess, object: report.results)
             if settings.settings.copyResultsToClipboard, !report.results.isEmpty {
                 copyToPasteboard(report.results.map(\.output))
             }
@@ -649,7 +658,7 @@ struct CropOutputOptions: View {
             row(symbol: options.overwrite ? "arrow.2.squarepath" : "plus.square.on.square",
                 title: "Save",
                 detail: options.overwrite ? "Replaces each original. The old version goes to the Trash."
-                                          : "Adds a -cropped copy to your output folder. Originals stay as they are.") {
+                                          : "Adds a -cropped copy. Originals stay as they are.") {
                 Picker("Save", selection: $options.overwrite) {
                     Text("Replace").tag(true)
                     Text("New files").tag(false)
