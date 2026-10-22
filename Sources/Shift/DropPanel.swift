@@ -42,7 +42,7 @@ final class DropModel: ObservableObject {
     }
 }
 
-/// The action bar: slides in at the top of the screen, centred, while you drag with Shift held.
+/// The action bar: slides in at the top of the screen, centred, while you drag with the trigger keys held.
 @MainActor
 final class DropController {
     static let maxWidth: CGFloat = 1600
@@ -94,7 +94,7 @@ final class DropController {
         }
     }
 
-    /// Shift was pressed during a file drag: show the actions for what is being dragged.
+    /// The trigger keys were pressed during a file drag: show the actions for what is being dragged.
     func showForDrag() {
         guard model.phase != .working else { return }
         let files = DropTargetView.previewURLs(NSPasteboard(name: .drag))

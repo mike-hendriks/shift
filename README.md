@@ -6,7 +6,7 @@ Results stay in a floating shelf, ready to drag into the next tool.
 ## How it works
 
 1. Drag one or more files anywhere (Finder, desktop, any app that drags real files).
-2. Hold **Shift** while dragging. A bar slides in at the top of the screen (full width, at most 1600 px), under the menu bar,
+2. Hold **Shift** while dragging (or the keys you set in Settings → General). A bar slides in at the top of the screen (full width, at most 1600 px), under the menu bar,
    with large tiles for the actions that fit what you are dragging.
 3. Slide onto a tile and let go: it runs right away. Let go on "Op de shelf" to park the files as they are.
    Let go anywhere else on the bar and it stays open: click a tile or press 1-9 (Return runs the first).
@@ -19,7 +19,8 @@ No Accessibility or Input Monitoring permission needed: Shift polls mouse, modif
 
 Open Settings from the menu bar icon (⌘,).
 
-- **General**: output folder, copy results to the clipboard, launch at login.
+- **General**: output folder, copy results to the clipboard, launch at login, and the trigger: any combination of
+  ⌃ ⌥ ⇧ ⌘ fn to hold while dragging. Click the keys or press Record and hold the combination.
 - **Actions**: per file type, tick the actions that show up in the bar and drag them into your order. The first one is
   the highlighted tile and runs on Return. Actions that would not change a file stay hidden on their own: To JPG for a
   JPG, a resize preset for images that are already small enough, One PDF for a single image.

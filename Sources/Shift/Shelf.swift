@@ -96,9 +96,10 @@ final class ShelfController {
     private var hasBeenPlaced = false
     private var showingHint = false
 
-    init(store: ShelfStore, onDragChanged: @escaping (Bool) -> Void) {
+    init(store: ShelfStore, settings: SettingsStore, onDragChanged: @escaping (Bool) -> Void) {
         self.store = store
-        panel = FloatingPanel(rootView: ShelfView(store: store, onDragChanged: onDragChanged, onClose: { [weak self] in self?.close() }))
+        panel = FloatingPanel(rootView: ShelfView(store: store, settings: settings, onDragChanged: onDragChanged,
+                                                  onClose: { [weak self] in self?.close() }))
         panel.isMovableByWindowBackground = true
         quickLook = ShelfQuickLook(store: store)
         panel.previewController = quickLook
@@ -180,6 +181,7 @@ final class ShelfController {
 
 struct ShelfView: View {
     @ObservedObject var store: ShelfStore
+    @ObservedObject var settings: SettingsStore
     var onDragChanged: (Bool) -> Void
     var onClose: () -> Void
 
@@ -251,7 +253,7 @@ struct ShelfView: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Drag files and hold ⇧ Shift.")
+            Text("Drag files and hold \(settings.settings.triggerModifiers.label).")
                 .font(.system(size: 12, weight: .medium))
             Text("Results stay here. Drag them straight into your next tool.")
                 .font(.system(size: 11))

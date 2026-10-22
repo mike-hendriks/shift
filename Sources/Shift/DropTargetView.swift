@@ -33,12 +33,19 @@ final class DropTargetView: NSView {
         log.notice("Drag entered with \(files.count) files")
         onEnter(files)
         report(sender)
-        return .copy
+        return operation(for: sender)
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
         report(sender)
-        return .copy
+        return operation(for: sender)
+    }
+
+    /// Shift only reads the dragged files, so any operation the source allows is fine. Trigger keys like ⌘ or ⌥
+    /// narrow what Finder offers; asking for copy alone would then refuse the drop.
+    private func operation(for sender: NSDraggingInfo) -> NSDragOperation {
+        let allowed = sender.draggingSourceOperationMask
+        return [NSDragOperation.copy, .generic, .link, .move].first { allowed.contains($0) } ?? .copy
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) { onExit() }

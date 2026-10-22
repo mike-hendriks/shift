@@ -1,5 +1,28 @@
 import Foundation
 
+/// The keys you hold while dragging files to bring up the action bar.
+public struct TriggerModifiers: OptionSet, Codable, Hashable, Sendable {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+
+    public static let control = TriggerModifiers(rawValue: 1 << 0)
+    public static let option = TriggerModifiers(rawValue: 1 << 1)
+    public static let shift = TriggerModifiers(rawValue: 1 << 2)
+    public static let command = TriggerModifiers(rawValue: 1 << 3)
+    public static let function = TriggerModifiers(rawValue: 1 << 4)
+
+    /// In the order macOS writes them: ⌃⌥⇧⌘, then fn.
+    public static let all: [(key: TriggerModifiers, symbol: String, name: String)] = [
+        (.control, "⌃", "Control"), (.option, "⌥", "Option"), (.shift, "⇧", "Shift"),
+        (.command, "⌘", "Command"), (.function, "fn", "Fn"),
+    ]
+
+    public var symbols: String { Self.all.filter { contains($0.key) }.map(\.symbol).joined() }
+    public var names: String { Self.all.filter { contains($0.key) }.map(\.name).joined(separator: " + ") }
+    /// "⇧ Shift", "⌥⇧ Option + Shift".
+    public var label: String { "\(symbols) \(names)" }
+}
+
 /// One action in a file kind's list: shown or hidden, in the order of the array.
 public struct ActionEntry: Codable, Hashable, Sendable {
     public var id: String
@@ -20,6 +43,7 @@ public struct ShiftSettings: Codable, Equatable, Sendable {
     public var layout: [String: [ActionEntry]]
     public var outputDirectory: String?
     public var copyResultsToClipboard: Bool
+    public var triggerModifiers: TriggerModifiers
 
     public static let defaults = ShiftSettings(
         imagePresets: Presets.defaultImage,
@@ -27,7 +51,8 @@ public struct ShiftSettings: Codable, Equatable, Sendable {
         pdfPresets: Presets.defaultPDF,
         layout: defaultLayout,
         outputDirectory: nil,
-        copyResultsToClipboard: false
+        copyResultsToClipboard: false,
+        triggerModifiers: .shift
     )
 
     /// Off until you turn them on: rarely needed formats.
@@ -49,13 +74,15 @@ public struct ShiftSettings: Codable, Equatable, Sendable {
     }()
 
     public init(imagePresets: [ImagePreset], videoPresets: [VideoPreset], pdfPresets: [PDFPreset],
-                layout: [String: [ActionEntry]], outputDirectory: String?, copyResultsToClipboard: Bool) {
+                layout: [String: [ActionEntry]], outputDirectory: String?, copyResultsToClipboard: Bool,
+                triggerModifiers: TriggerModifiers) {
         self.imagePresets = imagePresets
         self.videoPresets = videoPresets
         self.pdfPresets = pdfPresets
         self.layout = layout
         self.outputDirectory = outputDirectory
         self.copyResultsToClipboard = copyResultsToClipboard
+        self.triggerModifiers = triggerModifiers
     }
 
     /// Missing keys fall back to the defaults, so settings survive new fields in later versions.
@@ -68,6 +95,8 @@ public struct ShiftSettings: Codable, Equatable, Sendable {
         layout = try c.decodeIfPresent([String: [ActionEntry]].self, forKey: .layout) ?? d.layout
         outputDirectory = try c.decodeIfPresent(String.self, forKey: .outputDirectory)
         copyResultsToClipboard = try c.decodeIfPresent(Bool.self, forKey: .copyResultsToClipboard) ?? d.copyResultsToClipboard
+        let trigger = try c.decodeIfPresent(TriggerModifiers.self, forKey: .triggerModifiers) ?? d.triggerModifiers
+        triggerModifiers = trigger.isEmpty ? d.triggerModifiers : trigger
     }
 
     // MARK: Storage

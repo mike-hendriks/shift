@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ShiftCore
 
 @MainActor
@@ -10,13 +11,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let settings = SettingsStore()
     private var settingsWindow: SettingsWindowController!
+    private var cancellables: Set<AnyCancellable> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        shelf = ShelfController(store: shelfStore) { [weak self] dragging in self?.watcher.isSuppressed = dragging }
+        shelf = ShelfController(store: shelfStore, settings: settings) { [weak self] dragging in self?.watcher.isSuppressed = dragging }
         drop = DropController(shelf: shelfStore, settings: settings)
         settingsWindow = SettingsWindowController(store: settings)
 
-        watcher.onShiftDrag = { [weak self] _ in self?.drop.showForDrag() }
+        watcher.onTriggerDrag = { [weak self] _ in self?.drop.showForDrag() }
+        settings.$settings
+            .map(\.triggerModifiers)
+            .removeDuplicates()
+            .sink { [weak self] modifiers in self?.watcher.requiredModifiers = modifiers.eventFlags }
+            .store(in: &cancellables)
         watcher.onDragEnded = { [weak self] in self?.drop.dragEnded() }
         watcher.start()
 

@@ -143,8 +143,19 @@ struct GeneralPane: View {
                 }
             }
             Section("Trigger") {
-                Text("Drag files anywhere and hold ⇧ Shift. The action bar slides in at the top of the screen.")
-                    .foregroundStyle(.secondary)
+                LabeledContent("Hold while dragging") {
+                    TriggerShortcutField(modifiers: store.binding(\.triggerModifiers))
+                }
+                Text("Drag files anywhere and hold \(store.settings.triggerModifiers.label). The action bar slides in at the top of the screen.")
+                    .font(.callout).foregroundStyle(.secondary)
+                if !store.settings.triggerModifiers.isDisjoint(with: [.command, .option]) {
+                    Text("⌘ and ⌥ also change what Finder does when you drop somewhere else, like moving instead of copying. Shift itself only reads your files.")
+                        .font(.callout).foregroundStyle(.orange)
+                }
+                if store.settings.triggerModifiers.contains(.function) {
+                    Text("Depending on your keyboard settings, fn can also open the emoji picker or start dictation.")
+                        .font(.callout).foregroundStyle(.orange)
+                }
             }
         }
         .formStyle(.grouped)
@@ -558,5 +569,65 @@ struct PDFPresetEditor: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Pick the trigger keys: click them, or press Record and hold the combination.
+struct TriggerShortcutField: View {
+    @Binding var modifiers: TriggerModifiers
+    @State private var recording = false
+    @State private var recorded: TriggerModifiers = []
+    @State private var monitor: Any?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(TriggerModifiers.all, id: \.symbol) { item in
+                let on = (recording ? recorded : modifiers).contains(item.key)
+                Button { toggle(item.key) } label: {
+                    Text(item.symbol)
+                        .font(.system(size: item.symbol.count > 1 ? 12 : 15, weight: .semibold))
+                        .frame(minWidth: 32, minHeight: 28)
+                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(on ? Color.accentColor : Color.primary.opacity(0.07)))
+                        .foregroundStyle(on ? Color.white : Color.primary)
+                        .contentShape(RoundedRectangle(cornerRadius: 7))
+                }
+                .buttonStyle(.plain)
+                .disabled(recording)
+                .help(item.name)
+            }
+            Button(recording ? "Press keys…" : "Record") { recording ? stop() : start() }
+                .padding(.leading, 6)
+        }
+        .onDisappear(perform: stop)
+    }
+
+    /// Keeps at least one key, otherwise the bar could never be triggered.
+    private func toggle(_ key: TriggerModifiers) {
+        var next = modifiers
+        if next.contains(key) { next.remove(key) } else { next.insert(key) }
+        if !next.isEmpty { modifiers = next }
+    }
+
+    /// Records the largest combination held, and saves it once every key is released.
+    private func start() {
+        recorded = []
+        recording = true
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+            let held = TriggerModifiers(eventFlags: event.modifierFlags)
+            if held.isEmpty {
+                if !recorded.isEmpty { modifiers = recorded }
+                stop()
+            } else {
+                recorded.formUnion(held)
+            }
+            return event
+        }
+    }
+
+    private func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        recording = false
     }
 }
