@@ -220,7 +220,8 @@ final class DropController {
     private func startCrop(_ files: [URL]) {
         model.cropFiles = files.filter { FileKind.of($0) == .image }
         model.crop = ImageCrop()
-        model.cropOptions = CropOptions()
+        // Replacing the originals is what you usually want; they go to the Trash, so it is recoverable.
+        model.cropOptions = CropOptions(overwrite: true)
         model.cropSavedAsPreset = false
         model.isDragging = false
         model.dropSpot = nil
@@ -595,25 +596,8 @@ struct CropForm: View {
                     Text("The ratio crop stays centred inside the trimmed area (dashed).")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
-                VStack(alignment: .leading, spacing: 8) {
-                    Picker("Save as", selection: $model.cropOptions.overwrite) {
-                        Text("New files").tag(false)
-                        Text("Overwrite originals").tag(true)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                    if model.cropOptions.overwrite {
-                        Label("The originals go to the Trash first, so you can get them back.", systemImage: "trash")
-                            .font(.system(size: 12)).foregroundStyle(.orange)
-                    }
-                    Toggle("Also compress", isOn: $model.cropOptions.compress)
-                    if model.cropOptions.compress {
-                        Text("JPG, HEIC, AVIF and WebP are saved at quality \(Int(CropOptions.compressedQuality * 100)), in the same format. PNG stays lossless.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+                CropOutputOptions(options: $model.cropOptions)
+                    .padding(.top, 10)
                 if let first, let size = imagePixelSize(first) {
                     let result = model.crop.rect(in: size)
                     Text(result.map { "\(first.lastPathComponent): \(Int(size.width))×\(Int(size.height)) → \(Int($0.width))×\(Int($0.height)) px" }
@@ -653,6 +637,61 @@ struct CropForm: View {
         let maxWidth = max(240, model.width - 44 - 28 - 460)
         let scale = min(420 / size.height, maxWidth / size.width)
         return CGSize(width: (size.width * scale).rounded(), height: (size.height * scale).rounded())
+    }
+}
+
+/// Where cropped images go and whether they shrink, as two rows in the style of System Settings.
+struct CropOutputOptions: View {
+    @Binding var options: CropOptions
+
+    var body: some View {
+        VStack(spacing: 0) {
+            row(symbol: options.overwrite ? "arrow.2.squarepath" : "plus.square.on.square",
+                title: "Save",
+                detail: options.overwrite ? "Replaces each original. The old version goes to the Trash."
+                                          : "Adds a -cropped copy to your output folder. Originals stay as they are.") {
+                Picker("Save", selection: $options.overwrite) {
+                    Text("Replace").tag(true)
+                    Text("New files").tag(false)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
+            Divider().padding(.leading, 52)
+            row(symbol: "arrow.down.to.line.compact",
+                title: "Compress",
+                detail: "JPG, HEIC, AVIF and WebP at quality \(Int(CropOptions.compressedQuality * 100)), same format. PNG stays lossless.") {
+                Toggle("Compress", isOn: $options.compress)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.05)))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
+        .animation(.easeOut(duration: 0.15), value: options)
+    }
+
+    private func row<Control: View>(symbol: String, title: String, detail: String,
+                                    @ViewBuilder control: () -> Control) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 28, height: 28)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.accentColor.opacity(0.14)))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 13, weight: .semibold))
+                Text(detail)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            control()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
     }
 }
 

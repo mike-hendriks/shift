@@ -42,7 +42,7 @@ enum DebugSnapshot {
 
             // Drag the bottom edge of the crop up with real mouse events, as a user would.
             drop.model.crop = ImageCrop(top: 40, right: 60, bottom: 200, left: 60)
-            drop.model.cropOptions = CropOptions(overwrite: true, compress: true)
+            drop.model.cropOptions = CropOptions(overwrite: false, compress: true)
             try? await Task.sleep(for: .milliseconds(800))
             capture(title: "crop-set", to: dir)
             if let panel = NSApp.windows.first(where: { $0.isVisible && $0 is FloatingPanel && $0.isKeyWindow || ($0 is FloatingPanel && $0.frame.width > 600) }),
