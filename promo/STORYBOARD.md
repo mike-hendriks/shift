@@ -10,7 +10,7 @@
 | 23.5–30.0 | Batch | Select five mixed files. The bar groups them by type. Press 1 instead of dropping. Shelf fills up. | Groove continues |
 | 30.0–50.0 | Five USPs, 4 s each | Anything becomes Markdown (OCR, PDF, transcripts on-device, Dutch included). Smaller, never bigger. Tuned to how you work (presets, trigger keys). Nothing leaves your Mac. Also in your terminal, and it updates itself. | Groove, a hit per block |
 | 50.0–54.0 | The wall | Every action tile streams past in 3D. "Every file. One key." | Riser |
-| 54.0–60.0 | End card | Icon, Shift, "Drag. Hold Shift. Done." Free for macOS, github.com/mike-hendriks/shift, Made by Stuurmen. | Final impact, chord rings out |
+| 54.0–60.0 | End card | Icon, Shift, "Drag. Hold Shift. Done." Free for macOS, github.com/mike-hendriks/shift. | Final impact, chord rings out |
 
 ## Build
 
