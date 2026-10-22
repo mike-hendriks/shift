@@ -1,7 +1,11 @@
 # Shift
 
 Menu bar app for macOS that converts, compresses and resizes files the moment you drag them and hold Shift.
-Results stay in a floating shelf, ready to drag into the next tool.
+Results stay in a floating shelf, ready to drag into the next tool. Free for macOS.
+
+[![Shift: drag a file, hold Shift, drop it on an action. Click to watch the release film with sound.](docs/shift-preview.webp)](docs/shift-release.mp4)
+
+▶ [Watch the release film](docs/shift-release.mp4) (60 s, with sound). The source lives in [promo/](promo/).
 
 ## How it works
 
