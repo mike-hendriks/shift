@@ -220,8 +220,8 @@ final class DropController {
     private func startCrop(_ files: [URL]) {
         model.cropFiles = files.filter { FileKind.of($0) == .image }
         model.crop = ImageCrop()
-        // Replacing the originals is what you usually want; they go to the Trash, so it is recoverable.
-        model.cropOptions = CropOptions(overwrite: true)
+        // New copies by default; replacing the originals is one click away.
+        model.cropOptions = CropOptions()
         model.cropSavedAsPreset = false
         model.isDragging = false
         model.dropSpot = nil

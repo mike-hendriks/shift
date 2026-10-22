@@ -30,7 +30,7 @@ Open Settings from the menu bar icon (⌘,).
   JPG, a resize preset for images that are already small enough, One PDF for a single image.
 - **Presets**: your own compression and resize options.
   - Images: crop (trim edges, ratio), format (keep, smallest, or a fixed one), longest side or scale, quality.
-    Crop… in the bar replaces the originals by default (they go to the Trash first) or saves new files, can compress in
+    Crop… in the bar saves new copies by default or replaces the originals (they go to the Trash first), can compress in
     the same go, and has a Save as Preset button for numbers you use often.
   - Video: resolution, quality, keep or drop audio. Always H.264 MP4.
   - PDF: image quality and resolution.
