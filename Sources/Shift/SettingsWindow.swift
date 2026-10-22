@@ -33,15 +33,19 @@ final class SettingsWindowController {
     }
 
     private let store: SettingsStore
+    private let updater: Updater
     private var window: NSWindow?
     private let selection = PaneSelection()
 
-    init(store: SettingsStore) { self.store = store }
+    init(store: SettingsStore, updater: Updater) {
+        self.store = store
+        self.updater = updater
+    }
 
     func show(_ pane: Pane? = nil) {
         if let pane { selection.pane = pane }
         if window == nil {
-            let hosting = NSHostingController(rootView: SettingsView(store: store, selection: selection))
+            let hosting = NSHostingController(rootView: SettingsView(store: store, updater: updater, selection: selection))
             let window = NSWindow(contentViewController: hosting)
             window.title = "Shift Settings"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
@@ -71,6 +75,7 @@ final class PaneSelection: ObservableObject {
 
 struct SettingsView: View {
     @ObservedObject var store: SettingsStore
+    let updater: Updater
     @ObservedObject var selection: PaneSelection
 
     var body: some View {
@@ -81,7 +86,7 @@ struct SettingsView: View {
             .navigationSplitViewColumnWidth(170)
         } detail: {
             switch selection.pane {
-            case .general: GeneralPane(store: store)
+            case .general: GeneralPane(store: store, updater: updater)
             case .actions: ActionsPane(store: store)
             case .presets: PresetsPane(store: store)
             }
@@ -110,6 +115,7 @@ extension FileKind {
 
 struct GeneralPane: View {
     @ObservedObject var store: SettingsStore
+    @ObservedObject var updater: Updater
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
 
@@ -137,9 +143,20 @@ struct GeneralPane: View {
             Section("System") {
                 Toggle("Launch at login", isOn: Binding(get: { launchAtLogin }, set: setLaunchAtLogin))
                 if let loginError { Text(loginError).font(.callout).foregroundStyle(.red) }
-                LabeledContent("WebP encoder") {
-                    Text(Processor.canWriteWebP ? "cwebp found" : "Missing, install with brew install webp")
-                        .foregroundStyle(Processor.canWriteWebP ? Color.secondary : Color.orange)
+            }
+            Section("Updates") {
+                if Updater.isConfigured {
+                    Toggle("Check for updates automatically", isOn: Binding(get: { updater.automaticallyChecks },
+                                                                           set: { updater.automaticallyChecks = $0 }))
+                    Toggle("Download and install updates automatically", isOn: Binding(get: { updater.automaticallyDownloads },
+                                                                                      set: { updater.automaticallyDownloads = $0 }))
+                        .disabled(!updater.automaticallyChecks)
+                }
+                LabeledContent("Version \(updater.version)") {
+                    Button("Check Now") { updater.checkForUpdates() }.disabled(!Updater.isConfigured)
+                }
+                if !Updater.isConfigured {
+                    Text("Development build: updates only work in a release build.").font(.callout).foregroundStyle(.secondary)
                 }
             }
             Section("Trigger") {
@@ -464,10 +481,6 @@ struct ImagePresetEditor: View {
                 if preset.format == .auto {
                     Text("Keeps JPG, HEIC, AVIF and WebP as they are. PNG and other lossless files become JPG, or WebP when they have transparency.")
                         .font(.callout).foregroundStyle(.secondary)
-                }
-                if case .format(.webp) = preset.format, !Processor.canWriteWebP {
-                    Text("cwebp is not installed, so this falls back to JPG or PNG. Install it with brew install webp.")
-                        .font(.callout).foregroundStyle(.orange)
                 }
             }
             Section("Size") {

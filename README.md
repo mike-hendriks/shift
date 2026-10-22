@@ -50,10 +50,19 @@ covers languages SpeechTranscriber does not. The first run per language download
 Compression never ships a bigger file: if the result is larger, the original is kept.
 Output goes to `~/Downloads/Shift` (change it from the menu bar icon).
 
+## Install
+
+Download the latest `Shift-x.y.z.dmg` from [Releases](https://github.com/mike-hendriks/shift/releases/latest), open it
+and drag Shift to Applications.
+
+Shift is not notarized yet, so macOS blocks the first launch. Open it once, then go to System Settings → Privacy &
+Security and click **Open Anyway**. After that Shift starts normally and keeps itself up to date: it checks for updates
+daily (Settings → General → Updates, or Check for Updates… in the menu).
+
 ## Requirements
 
-- macOS 15 or later, Swift 6 toolchain (Command Line Tools are enough)
-- `cwebp` for WebP output: `brew install webp`. Without it, the web preset falls back to JPG/PNG.
+- macOS 15 or later (transcription needs macOS 26), Apple Silicon
+- To build: Swift 6 toolchain (Command Line Tools are enough). WebP encoding is built in through libwebp.
 
 ## Build
 
@@ -61,6 +70,32 @@ Output goes to `~/Downloads/Shift` (change it from the menu bar icon).
 scripts/build-app.sh            # builds dist/Shift.app and dist/shift-cli
 scripts/build-app.sh --install  # also copies to /Applications and launches
 ```
+
+## Releasing
+
+Releases are built by GitHub Actions ([release.yml](.github/workflows/release.yml)) when you push a version tag:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The workflow runs [scripts/release.sh](scripts/release.sh), which builds Shift.app, packs `Shift-0.2.0.dmg`, signs it
+with the Sparkle EdDSA key and writes `appcast.xml`. Both are attached to the GitHub release. Installed copies read
+`releases/latest/download/appcast.xml`, so every published release reaches all users.
+
+- Build numbers (`CFBundleVersion`, which Sparkle compares) are the commit count, so they always go up.
+- Release notes are the commit titles since the previous tag.
+- The private signing key lives in your login keychain (Sparkle's `generate_keys`) and in the repository secret
+  `SPARKLE_PRIVATE_KEY`. Lose both and existing installs cannot verify new updates anymore, so keep a backup:
+  `.build/sparkle-tools/bin/generate_keys -x sparkle-key-backup` and store it in a password manager.
+- `scripts/release.sh 0.2.0` builds the same files locally without publishing.
+
+### Code signing
+
+Builds are ad-hoc signed for now. With an Apple Developer ID, set `SIGN_IDENTITY` to the Developer ID Application
+identity and add notarization (`xcrun notarytool submit --wait`, then `xcrun stapler staple`) to `scripts/release.sh`;
+the build script already enables the hardened runtime when a real identity is set.
 
 ## CLI
 
@@ -74,6 +109,6 @@ dist/shift-cli preset-video-720 clip.mov            # any preset id shown by sug
 
 ## Layout
 
-- `Sources/ShiftCore` - file detection, suggestions and all processing (ImageIO, cwebp, TextKit, PDFKit, AVFoundation)
+- `Sources/ShiftCore` - file detection, suggestions and all processing (ImageIO, libwebp, Vision, Speech, TextKit, PDFKit, AVFoundation)
 - `Sources/Shift` - the app: drag watcher, drop panel, shelf, menu bar
 - `Sources/ShiftCLI` - command line wrapper around ShiftCore

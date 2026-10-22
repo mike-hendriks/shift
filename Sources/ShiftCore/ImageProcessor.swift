@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import libwebp
 
 /// A decoded image, already oriented, resized and converted to sRGB.
 struct PreparedImage {
@@ -98,22 +99,62 @@ enum ImageProcessor {
 
     // MARK: WebP
 
-    /// macOS can read WebP but not write it, so encoding goes through `cwebp` (brew install webp).
-    static var cwebpPath: String? {
-        let candidates = ["/opt/homebrew/bin/cwebp", "/usr/local/bin/cwebp", "/usr/bin/cwebp"]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
-
+    /// macOS reads WebP but cannot write it, so Shift encodes with libwebp, built into the app.
+    /// Same settings as `cwebp -m 6 -sharp_yuv -alpha_q 90`; no metadata is written.
     private static func writeWebP(_ image: CGImage, quality: Double, to url: URL) throws {
-        guard let cwebp = cwebpPath else { throw ShiftError.missingTool("cwebp", install: "brew install webp") }
+        let width = image.width, height = image.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        try pixels.withUnsafeMutableBytes { buffer in
+            guard let ctx = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+                throw ShiftError.failed("Could not prepare the image for WebP")
+            }
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        // CoreGraphics premultiplies alpha; WebP expects straight alpha.
+        var i = 0
+        while i < pixels.count {
+            let alpha = Int(pixels[i + 3])
+            if alpha > 0 && alpha < 255 {
+                for c in 0..<3 { pixels[i + c] = UInt8(min(255, (Int(pixels[i + c]) * 255 + alpha / 2) / alpha)) }
+            }
+            i += 4
+        }
 
-        let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
-        defer { try? FileManager.default.removeItem(at: temp) }
-        try write(PreparedImage(cgImage: image, isTransparent: true), as: .png, quality: 1, to: temp)
+        var config = WebPConfig()
+        guard WebPConfigInitInternal(&config, WEBP_PRESET_PICTURE, Float(quality * 100), WEBP_ENCODER_ABI_VERSION) != 0 else {
+            throw ShiftError.failed("Could not set up the WebP encoder")
+        }
+        config.method = 6
+        config.use_sharp_yuv = 1
+        config.alpha_quality = 90
 
-        let q = String(Int((quality * 100).rounded()))
-        try run(cwebp, ["-quiet", "-q", q, "-m", "6", "-sharp_yuv", "-alpha_q", "90", "-metadata", "none",
-                        temp.path, "-o", url.path])
+        var picture = WebPPicture()
+        guard WebPPictureInitInternal(&picture, WEBP_ENCODER_ABI_VERSION) != 0 else {
+            throw ShiftError.failed("Could not set up the WebP encoder")
+        }
+        defer { WebPPictureFree(&picture) }
+        picture.use_argb = 1
+        picture.width = Int32(width)
+        picture.height = Int32(height)
+        guard WebPPictureImportRGBA(&picture, pixels, Int32(width * 4)) != 0 else {
+            throw ShiftError.failed("Could not read the image into the WebP encoder")
+        }
+
+        let writer = UnsafeMutablePointer<WebPMemoryWriter>.allocate(capacity: 1)
+        defer {
+            WebPMemoryWriterClear(writer)
+            writer.deallocate()
+        }
+        WebPMemoryWriterInit(writer)
+        picture.writer = WebPMemoryWrite
+        picture.custom_ptr = UnsafeMutableRawPointer(writer)
+
+        guard WebPEncode(&config, &picture) != 0, let bytes = writer.pointee.mem else {
+            throw ShiftError.failed("WebP encoding failed (error \(picture.error_code.rawValue))")
+        }
+        try Data(bytes: bytes, count: writer.pointee.size).write(to: url)
     }
 
     // MARK: Images to PDF
@@ -148,20 +189,5 @@ enum ImageProcessor {
               let source = CGImageSourceCreateWithData(data, nil),
               let jpeg = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return image.cgImage }
         return jpeg
-    }
-}
-
-func run(_ executable: String, _ arguments: [String]) throws {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: executable)
-    process.arguments = arguments
-    let errorPipe = Pipe()
-    process.standardError = errorPipe
-    process.standardOutput = FileHandle.nullDevice
-    try process.run()
-    process.waitUntilExit()
-    guard process.terminationStatus == 0 else {
-        let message = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        throw ShiftError.failed("\((executable as NSString).lastPathComponent) faalde: \(message.trimmingCharacters(in: .whitespacesAndNewlines))")
     }
 }

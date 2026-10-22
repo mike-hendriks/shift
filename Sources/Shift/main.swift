@@ -10,13 +10,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var drop: DropController!
     private var statusItem: NSStatusItem!
     private let settings = SettingsStore()
+    private let updater = Updater()
     private var settingsWindow: SettingsWindowController!
     private var cancellables: Set<AnyCancellable> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         shelf = ShelfController(store: shelfStore, settings: settings) { [weak self] dragging in self?.watcher.isSuppressed = dragging }
         drop = DropController(shelf: shelfStore, settings: settings)
-        settingsWindow = SettingsWindowController(store: settings)
+        settingsWindow = SettingsWindowController(store: settings, updater: updater)
 
         watcher.onTriggerDrag = { [weak self] _ in self?.drop.showForDrag() }
         settings.$settings
@@ -54,12 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(item("Open Output Folder", #selector(openOutput), key: ""))
         menu.addItem(item("Settings…", #selector(showSettings), key: ","))
-        if !Processor.canWriteWebP {
-            menu.addItem(.separator())
-            let warning = NSMenuItem(title: "WebP off: install with brew install webp", action: nil, keyEquivalent: "")
-            warning.isEnabled = false
-            menu.addItem(warning)
-        }
+        if Updater.isConfigured { menu.addItem(item("Check for Updates…", #selector(checkForUpdates), key: "")) }
         menu.addItem(.separator())
         menu.addItem(item("Quit Shift", #selector(quit), key: "q"))
     }
@@ -69,6 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let main = NSMenu()
         let appMenu = NSMenu()
         appMenu.addItem(item("Settings…", #selector(showSettings), key: ","))
+        appMenu.addItem(item("Check for Updates…", #selector(checkForUpdates), key: ""))
         appMenu.addItem(.separator())
         appMenu.addItem(item("Quit Shift", #selector(quit), key: "q"))
         main.addItem(submenu("Shift", appMenu))
@@ -119,6 +116,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showSettings() { settingsWindow.show() }
+
+    @objc private func checkForUpdates() { updater.checkForUpdates() }
 
     @objc private func quit() { NSApp.terminate(nil) }
 }

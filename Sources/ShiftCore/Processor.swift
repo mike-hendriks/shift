@@ -4,13 +4,11 @@ import Foundation
 public enum ShiftError: LocalizedError {
     case unreadable(URL)
     case failed(String)
-    case missingTool(String, install: String)
 
     public var errorDescription: String? {
         switch self {
         case .unreadable(let url): return "Could not read \(url.lastPathComponent)"
         case .failed(let message): return message
-        case .missingTool(let tool, let install): return "\(tool) is missing. Install it with: \(install)"
         }
     }
 }
@@ -71,7 +69,6 @@ public enum Processor {
         FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0].appendingPathComponent("Shift")
     }
 
-    public static var canWriteWebP: Bool { ImageProcessor.cwebpPath != nil }
 
     /// Runs an action on all files, a few at a time. Failures are collected per file instead of stopping the batch.
     public static func run(_ action: ShiftAction, on files: [URL], outputDirectory: URL,
@@ -129,30 +126,24 @@ public enum Processor {
         case .imagePreset(let preset):
             let image = try ImageProcessor.load(file, resize: preset.resize.mode)
             let source = ImageFormat.of(file)
-            let fallback: ImageFormat = image.isTransparent ? .png : .jpeg
-            var note: String?
-            var format: ImageFormat
+            let format: ImageFormat
             switch preset.format {
             case .original:
-                format = source.flatMap { $0 == .webp && !canWriteWebP ? nil : $0 } ?? fallback
+                format = source ?? (image.isTransparent ? .png : .jpeg)
             case .auto:
-                if let source, source.isLossy, source != .webp || canWriteWebP {
+                if let source, source.isLossy {
                     format = source
                 } else {
-                    format = image.isTransparent ? (canWriteWebP ? .webp : .png) : .jpeg
+                    format = image.isTransparent ? .webp : .jpeg
                 }
             case .format(let target):
                 format = target
-                if target == .webp && !canWriteWebP {
-                    format = fallback
-                    note = "cwebp missing, used \(format.displayName)"
-                }
             }
             let out = OutputNamer.url(for: file, suffix: Presets.slug(preset.name), ext: format.fileExtension, in: dir)
             try ImageProcessor.write(image, as: format, quality: preset.quality, to: out)
             // Pure compression must never make a file bigger.
             if preset.resize == .none, format == source { return [keepSmaller(source: file, output: out)] }
-            return [ShiftResult(sources: files, output: out, note: note)]
+            return [ShiftResult(sources: files, output: out)]
 
         case .convertImage(let format):
             let image = try ImageProcessor.load(file)
