@@ -220,8 +220,8 @@ final class DropController {
     private func startCrop(_ files: [URL]) {
         model.cropFiles = files.filter { FileKind.of($0) == .image }
         model.crop = ImageCrop()
-        // New copies by default; replacing the originals is one click away.
-        model.cropOptions = CropOptions()
+        // Starts from the defaults in Settings → General → Cropping; the form can still change them per crop.
+        model.cropOptions = settings.settings.cropDefaults
         model.cropSavedAsPreset = false
         model.isDragging = false
         model.dropSpot = nil

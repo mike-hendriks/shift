@@ -135,6 +135,19 @@ struct GeneralPane: View {
                     Button("Use Downloads/Shift") { store.settings.outputDirectory = nil }
                 }
             }
+            Section("Cropping") {
+                Picker("Save cropped images as", selection: store.binding(\.cropDefaults.overwrite)) {
+                    Text("New copies").tag(false)
+                    Text("Replace originals").tag(true)
+                }
+                Toggle("Compress by default", isOn: store.binding(\.cropDefaults.compress))
+                Text(store.settings.cropDefaults.overwrite
+                     ? "Crop… starts on Replace. Originals go to the Trash first, so you can get them back."
+                     : "Crop… starts on New files: a -cropped copy in your output folder, originals untouched.")
+                    .font(.callout).foregroundStyle(.secondary)
+                Text("You can still switch either option in the crop form each time.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
             Section("After processing") {
                 Toggle("Copy results to the clipboard", isOn: store.binding(\.copyResultsToClipboard))
                 Text("Results always land on the shelf. With this on, they are also ready to paste.")

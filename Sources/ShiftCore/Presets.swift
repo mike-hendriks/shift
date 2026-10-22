@@ -47,7 +47,7 @@ public struct AspectRatio: Hashable, Codable, Sendable {
 }
 
 /// How cropped images are saved.
-public struct CropOptions: Hashable, Sendable {
+public struct CropOptions: Hashable, Codable, Sendable {
     /// Replace each original in place; the original goes to the Trash first.
     public var overwrite = false
     /// Save lossy formats at `compressedQuality` instead of near-lossless. Formats never change, so overwriting works.

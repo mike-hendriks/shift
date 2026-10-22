@@ -44,6 +44,8 @@ public struct ShiftSettings: Codable, Equatable, Sendable {
     public var outputDirectory: String?
     public var copyResultsToClipboard: Bool
     public var triggerModifiers: TriggerModifiers
+    /// What the Crop… form starts with: new copies or replacing originals, compressed or not.
+    public var cropDefaults: CropOptions
 
     public static let defaults = ShiftSettings(
         imagePresets: Presets.defaultImage,
@@ -52,7 +54,8 @@ public struct ShiftSettings: Codable, Equatable, Sendable {
         layout: defaultLayout,
         outputDirectory: nil,
         copyResultsToClipboard: false,
-        triggerModifiers: .shift
+        triggerModifiers: .shift,
+        cropDefaults: CropOptions()
     )
 
     /// Off until you turn them on: rarely needed formats.
@@ -75,7 +78,7 @@ public struct ShiftSettings: Codable, Equatable, Sendable {
 
     public init(imagePresets: [ImagePreset], videoPresets: [VideoPreset], pdfPresets: [PDFPreset],
                 layout: [String: [ActionEntry]], outputDirectory: String?, copyResultsToClipboard: Bool,
-                triggerModifiers: TriggerModifiers) {
+                triggerModifiers: TriggerModifiers, cropDefaults: CropOptions) {
         self.imagePresets = imagePresets
         self.videoPresets = videoPresets
         self.pdfPresets = pdfPresets
@@ -83,6 +86,7 @@ public struct ShiftSettings: Codable, Equatable, Sendable {
         self.outputDirectory = outputDirectory
         self.copyResultsToClipboard = copyResultsToClipboard
         self.triggerModifiers = triggerModifiers
+        self.cropDefaults = cropDefaults
     }
 
     /// Missing keys fall back to the defaults, so settings survive new fields in later versions.
@@ -97,6 +101,7 @@ public struct ShiftSettings: Codable, Equatable, Sendable {
         copyResultsToClipboard = try c.decodeIfPresent(Bool.self, forKey: .copyResultsToClipboard) ?? d.copyResultsToClipboard
         let trigger = try c.decodeIfPresent(TriggerModifiers.self, forKey: .triggerModifiers) ?? d.triggerModifiers
         triggerModifiers = trigger.isEmpty ? d.triggerModifiers : trigger
+        cropDefaults = try c.decodeIfPresent(CropOptions.self, forKey: .cropDefaults) ?? d.cropDefaults
     }
 
     // MARK: Storage
