@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import ShiftCore
 import SwiftUI
 
@@ -10,7 +11,7 @@ enum DropSpot: Hashable {
 
 @MainActor
 final class DropModel: ObservableObject {
-    enum Phase: Equatable { case hidden, choosing, working, failed }
+    enum Phase: Equatable { case hidden, choosing, cropping, working, failed }
 
     @Published var phase: Phase = .hidden
     @Published var isTargeted = false
@@ -23,6 +24,11 @@ final class DropModel: ObservableObject {
     /// True while files are being dragged: letting go on a tile runs that action.
     @Published var isDragging = false
     @Published var dropSpot: DropSpot?
+    /// The images and numbers for the Crop… form.
+    @Published var cropFiles: [URL] = []
+    @Published var crop = ImageCrop()
+    @Published var cropOptions = CropOptions()
+    @Published var cropSavedAsPreset = false
     /// Width of the bar: the screen width, capped at `DropController.maxWidth`.
     @Published var width: CGFloat = 1200
     /// Frames of the drop spots in the panel's top-left based coordinates, reported by the views.
@@ -88,7 +94,7 @@ final class DropController {
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, !self.model.isDragging,
-                      self.model.phase == .choosing || self.model.phase == .failed else { return }
+                      [.choosing, .cropping, .failed].contains(self.model.phase) else { return }
                 self.hide()
             }
         }
@@ -184,6 +190,7 @@ final class DropController {
     }
 
     func perform(_ action: ShiftAction, on files: [URL]) {
+        if case .crop = action, model.phase != .cropping { startCrop(files); return }
         model.phase = .working
         model.isDragging = false
         model.workingTitle = action.title
@@ -207,6 +214,38 @@ final class DropController {
                 panel.makeKeyAndOrderFront(nil)
             }
         }
+    }
+
+    /// Crop needs numbers first: the bar turns into a crop editor, starting with nothing cut off.
+    private func startCrop(_ files: [URL]) {
+        model.cropFiles = files.filter { FileKind.of($0) == .image }
+        model.crop = ImageCrop()
+        model.cropOptions = CropOptions()
+        model.cropSavedAsPreset = false
+        model.isDragging = false
+        model.dropSpot = nil
+        model.phase = .cropping
+        dropTarget.isHidden = true
+        panel.makeKeyAndOrderFront(nil)
+        Task {
+            try? await Task.sleep(for: .milliseconds(200))
+            if model.phase == .cropping { panel.makeKey() }
+        }
+    }
+
+    func applyCrop() {
+        guard !model.crop.isEmpty, !model.cropFiles.isEmpty else { return }
+        perform(.crop(model.crop, model.cropOptions), on: model.cropFiles)
+    }
+
+    /// Keeps these numbers as an image preset, so they become a tile of their own.
+    func saveCropAsPreset() {
+        let crop = model.crop
+        guard !crop.isEmpty else { return }
+        let name = crop.summary.prefix(1).uppercased() + crop.summary.dropFirst()
+        settings.settings.imagePresets.append(ImagePreset(name: name, format: .original, resize: .none,
+                                                          quality: model.cropOptions.quality, crop: crop))
+        model.cropSavedAsPreset = true
     }
 
     func park(_ files: [URL]) {
@@ -244,6 +283,7 @@ final class DropController {
         model.files = []
         model.groups = []
         model.failures = []
+        model.cropFiles = []
     }
 
     private func handleKey(_ event: NSEvent) -> Bool {
@@ -273,6 +313,7 @@ struct DropBar: View {
             case .hidden: Color.clear.frame(height: 1)
             case .choosing: ActionBar(model: model, controller: controller)
             case .working: working
+            case .cropping: CropForm(model: model, controller: controller)
             case .failed: failed
             }
         }
@@ -523,5 +564,318 @@ extension View {
             Color.clear.preference(key: DropSpotFramesKey.self,
                                    value: spot.map { [$0: geometry.frame(in: .named(DropSpotFramesKey.space))] } ?? [:])
         })
+    }
+}
+
+// MARK: Crop
+
+struct CropForm: View {
+    @ObservedObject var model: DropModel
+    let controller: DropController
+
+    private var first: URL? { model.cropFiles.first }
+    private var count: Int { model.cropFiles.count }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 28) {
+            if let first {
+                let size = imagePixelSize(first) ?? CGSize(width: 4, height: 3)
+                CropEditor(url: first, pixelSize: size, crop: $model.crop)
+                    .frame(width: displaySize(size).width, height: displaySize(size).height)
+            }
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Crop \(count) \(FileKind.image.label(count: count))").font(.system(size: 17, weight: .bold))
+                    Text("Drag the edges or corners, drag inside to move, or type exact pixels. The same crop applies to every image.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                CropFields(crop: $model.crop)
+                if model.crop.aspect != nil {
+                    Text("The ratio crop stays centred inside the trimmed area (dashed).")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker("Save as", selection: $model.cropOptions.overwrite) {
+                        Text("New files").tag(false)
+                        Text("Overwrite originals").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    if model.cropOptions.overwrite {
+                        Label("The originals go to the Trash first, so you can get them back.", systemImage: "trash")
+                            .font(.system(size: 12)).foregroundStyle(.orange)
+                    }
+                    Toggle("Also compress", isOn: $model.cropOptions.compress)
+                    if model.cropOptions.compress {
+                        Text("JPG, HEIC, AVIF and WebP are saved at quality \(Int(CropOptions.compressedQuality * 100)), in the same format. PNG stays lossless.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if let first, let size = imagePixelSize(first) {
+                    let result = model.crop.rect(in: size)
+                    Text(result.map { "\(first.lastPathComponent): \(Int(size.width))×\(Int(size.height)) → \(Int($0.width))×\(Int($0.height)) px" }
+                         ?? "\(first.lastPathComponent) is too small for this crop")
+                        .font(.system(size: 12).monospacedDigit())
+                        .foregroundStyle(result == nil ? Color.orange : Color.secondary)
+                }
+                Spacer(minLength: 0)
+                HStack {
+                    Button("Cancel") { controller.hide() }
+                    Button("Reset") { model.crop = ImageCrop() }.disabled(model.crop.isEmpty)
+                    Spacer()
+                    if model.cropSavedAsPreset {
+                        Label("Saved as preset", systemImage: "checkmark").font(.system(size: 12)).foregroundStyle(.secondary)
+                    } else {
+                        Button("Save as Preset") { controller.saveCropAsPreset() }.disabled(model.crop.isEmpty)
+                    }
+                    Button(model.cropOptions.overwrite ? "Crop and Replace \(count)" : "Crop \(count) \(FileKind.image.label(count: count))") {
+                        controller.applyCrop()
+                    }
+                        .keyboardShortcut(.defaultAction)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(model.crop.isEmpty || count == 0)
+                }
+                .controlSize(.large)
+            }
+            .frame(width: 460)
+            .frame(maxHeight: .infinity, alignment: .top)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// As large as fits next to the form, at most 420 pt high.
+    private func displaySize(_ size: CGSize) -> CGSize {
+        let maxWidth = max(240, model.width - 44 - 28 - 460)
+        let scale = min(420 / size.height, maxWidth / size.width)
+        return CGSize(width: (size.width * scale).rounded(), height: (size.height * scale).rounded())
+    }
+}
+
+/// Pixels to cut per edge, plus an optional aspect ratio. Shared by the Crop… form and the preset editor.
+struct CropFields: View {
+    @Binding var crop: ImageCrop
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
+                GridRow {
+                    edge("Top", \.top)
+                    edge("Bottom", \.bottom)
+                }
+                GridRow {
+                    edge("Left", \.left)
+                    edge("Right", \.right)
+                }
+            }
+            HStack(spacing: 10) {
+                Text("Ratio").frame(width: 50, alignment: .leading)
+                Picker("Ratio", selection: $crop.aspect) {
+                    Text("Free").tag(AspectRatio?.none)
+                    ForEach(AspectRatio.common, id: \.self) { Text($0.label).tag(AspectRatio?.some($0)) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
+        }
+    }
+
+    private func edge(_ title: String, _ keyPath: WritableKeyPath<ImageCrop, Int>) -> some View {
+        HStack(spacing: 6) {
+            Text(title).frame(width: 50, alignment: .leading)
+            TextField(title, value: Binding(get: { crop[keyPath: keyPath] }, set: { crop[keyPath: keyPath] = max(0, $0) }),
+                      format: .number)
+                .textFieldStyle(.roundedBorder)
+                .labelsHidden()
+                .multilineTextAlignment(.trailing)
+                .frame(width: 72)
+            Text("px").foregroundStyle(.secondary)
+            Stepper(title, value: Binding(get: { crop[keyPath: keyPath] }, set: { crop[keyPath: keyPath] = max(0, $0) }),
+                    in: 0...100_000, step: 10)
+                .labelsHidden()
+        }
+    }
+}
+
+/// The first image, large and sharp, with the crop on top. Drag an edge or corner to trim it, drag inside to move it.
+/// Everything is in pixels of the original, so the numbers in the fields follow along.
+struct CropEditor: View {
+    let url: URL
+    let pixelSize: CGSize
+    @Binding var crop: ImageCrop
+    @State private var image: CGImage?
+    @State private var dragStart: ImageCrop?
+
+    private enum Handle { case top, bottom, left, right, topLeft, topRight, bottomLeft, bottomRight, move }
+
+    var body: some View {
+        ZStack {
+            if let image {
+                Image(decorative: image, scale: 1).resizable().interpolation(.high)
+            } else {
+                Color.primary.opacity(0.08)
+                ProgressView()
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay { GeometryReader { geometry in overlay(in: geometry.size) } }
+        .task(id: url) { image = await Self.loadPreview(url) }
+    }
+
+    /// A real image decode at up to 2400 px, oriented; Quick Look thumbnails are too small to judge a crop on.
+    private static func loadPreview(_ url: URL) async -> CGImage? {
+        await Task.detached(priority: .userInitiated) {
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 2400,
+            ]
+            return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        }.value
+    }
+
+    @ViewBuilder
+    private func overlay(in view: CGSize) -> some View {
+        let scale = view.width / pixelSize.width
+        let trimmed = CGRect(x: CGFloat(crop.left), y: CGFloat(crop.top),
+                             width: max(0, pixelSize.width - CGFloat(crop.left + crop.right)),
+                             height: max(0, pixelSize.height - CGFloat(crop.top + crop.bottom))).scaled(scale)
+        let kept = crop.rect(in: pixelSize)?.scaled(scale)
+
+        ZStack(alignment: .topLeading) {
+            // Everything that gets cut away is dimmed.
+            Path { path in
+                path.addRect(CGRect(origin: .zero, size: view))
+                if let kept { path.addRect(kept) }
+            }
+            .fill(Color.black.opacity(0.55), style: FillStyle(eoFill: true))
+            .allowsHitTesting(false)
+
+            if let kept {
+                if dragStart != nil { thirds(kept).allowsHitTesting(false) }
+                Rectangle().strokeBorder(Color.white, lineWidth: 1.5)
+                    .frame(width: kept.width, height: kept.height).position(x: kept.midX, y: kept.midY)
+                    .allowsHitTesting(false)
+            }
+            if crop.aspect != nil {
+                Rectangle().strokeBorder(Color.white.opacity(0.8), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                    .frame(width: trimmed.width, height: trimmed.height).position(x: trimmed.midX, y: trimmed.midY)
+                    .allowsHitTesting(false)
+            }
+            handleMarks(trimmed).allowsHitTesting(false)
+
+            // Hit areas: inside moves, edges trim one side, corners trim two. Corners sit on top.
+            hitArea(.move, CGRect(x: trimmed.minX + 12, y: trimmed.minY + 12,
+                                  width: max(0, trimmed.width - 24), height: max(0, trimmed.height - 24)), scale)
+                .pointerStyle(.grabIdle)
+            hitArea(.top, CGRect(x: trimmed.minX + 12, y: trimmed.minY - 8, width: max(0, trimmed.width - 24), height: 20), scale)
+                .pointerStyle(.frameResize(position: .top))
+            hitArea(.bottom, CGRect(x: trimmed.minX + 12, y: trimmed.maxY - 12, width: max(0, trimmed.width - 24), height: 20), scale)
+                .pointerStyle(.frameResize(position: .bottom))
+            hitArea(.left, CGRect(x: trimmed.minX - 8, y: trimmed.minY + 12, width: 20, height: max(0, trimmed.height - 24)), scale)
+                .pointerStyle(.frameResize(position: .leading))
+            hitArea(.right, CGRect(x: trimmed.maxX - 12, y: trimmed.minY + 12, width: 20, height: max(0, trimmed.height - 24)), scale)
+                .pointerStyle(.frameResize(position: .trailing))
+            hitArea(.topLeft, CGRect(x: trimmed.minX - 10, y: trimmed.minY - 10, width: 26, height: 26), scale)
+                .pointerStyle(.frameResize(position: .topLeading))
+            hitArea(.topRight, CGRect(x: trimmed.maxX - 16, y: trimmed.minY - 10, width: 26, height: 26), scale)
+                .pointerStyle(.frameResize(position: .topTrailing))
+            hitArea(.bottomLeft, CGRect(x: trimmed.minX - 10, y: trimmed.maxY - 16, width: 26, height: 26), scale)
+                .pointerStyle(.frameResize(position: .bottomLeading))
+            hitArea(.bottomRight, CGRect(x: trimmed.maxX - 16, y: trimmed.maxY - 16, width: 26, height: 26), scale)
+                .pointerStyle(.frameResize(position: .bottomTrailing))
+        }
+    }
+
+    private func hitArea(_ handle: Handle, _ rect: CGRect, _ scale: CGFloat) -> some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .frame(width: rect.width, height: rect.height)
+            .position(x: rect.midX, y: rect.midY)
+            .gesture(drag(handle, scale: scale))
+    }
+
+    private func drag(_ handle: Handle, scale: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 1)
+            .onChanged { value in
+                let start = dragStart ?? crop
+                if dragStart == nil { dragStart = crop }
+                let dx = Int((value.translation.width / scale).rounded())
+                let dy = Int((value.translation.height / scale).rounded())
+                crop = Self.apply(handle, dx: dx, dy: dy, to: start, size: pixelSize)
+            }
+            .onEnded { _ in dragStart = nil }
+    }
+
+    /// Moves the dragged edges by whole pixels, keeping at least 16 px of image and never trimming past an edge.
+    private static func apply(_ handle: Handle, dx: Int, dy: Int, to start: ImageCrop, size: CGSize) -> ImageCrop {
+        let width = Int(size.width), height = Int(size.height), minimum = 16
+        var c = start
+        func clamp(_ value: Int, _ upper: Int) -> Int { min(max(value, 0), max(upper, 0)) }
+        let left = { c.left = clamp(start.left + dx, width - c.right - minimum) }
+        let right = { c.right = clamp(start.right - dx, width - c.left - minimum) }
+        let top = { c.top = clamp(start.top + dy, height - c.bottom - minimum) }
+        let bottom = { c.bottom = clamp(start.bottom - dy, height - c.top - minimum) }
+        switch handle {
+        case .left: left()
+        case .right: right()
+        case .top: top()
+        case .bottom: bottom()
+        case .topLeft: top(); left()
+        case .topRight: top(); right()
+        case .bottomLeft: bottom(); left()
+        case .bottomRight: bottom(); right()
+        case .move:
+            let mx = min(max(dx, -start.left), start.right)
+            let my = min(max(dy, -start.top), start.bottom)
+            c.left = start.left + mx; c.right = start.right - mx
+            c.top = start.top + my; c.bottom = start.bottom - my
+        }
+        return c
+    }
+
+    /// White corner brackets and edge bars on the trimmed area, like Photos.
+    private func handleMarks(_ rect: CGRect) -> some View {
+        Path { path in
+            let arm: CGFloat = min(18, rect.width / 3, rect.height / 3)
+            for (x, y, sx, sy) in [(rect.minX, rect.minY, 1.0, 1.0), (rect.maxX, rect.minY, -1.0, 1.0),
+                                   (rect.minX, rect.maxY, 1.0, -1.0), (rect.maxX, rect.maxY, -1.0, -1.0)] {
+                path.move(to: CGPoint(x: x, y: y + sy * arm))
+                path.addLine(to: CGPoint(x: x, y: y))
+                path.addLine(to: CGPoint(x: x + sx * arm, y: y))
+            }
+            let bar: CGFloat = min(24, rect.width / 4, rect.height / 4)
+            path.move(to: CGPoint(x: rect.midX - bar / 2, y: rect.minY)); path.addLine(to: CGPoint(x: rect.midX + bar / 2, y: rect.minY))
+            path.move(to: CGPoint(x: rect.midX - bar / 2, y: rect.maxY)); path.addLine(to: CGPoint(x: rect.midX + bar / 2, y: rect.maxY))
+            path.move(to: CGPoint(x: rect.minX, y: rect.midY - bar / 2)); path.addLine(to: CGPoint(x: rect.minX, y: rect.midY + bar / 2))
+            path.move(to: CGPoint(x: rect.maxX, y: rect.midY - bar / 2)); path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY + bar / 2))
+        }
+        .stroke(Color.white, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+        .shadow(color: .black.opacity(0.4), radius: 1.5)
+    }
+
+    /// Rule-of-thirds guides while dragging.
+    private func thirds(_ rect: CGRect) -> some View {
+        Path { path in
+            for i in 1...2 {
+                let x = rect.minX + rect.width * CGFloat(i) / 3
+                let y = rect.minY + rect.height * CGFloat(i) / 3
+                path.move(to: CGPoint(x: x, y: rect.minY)); path.addLine(to: CGPoint(x: x, y: rect.maxY))
+                path.move(to: CGPoint(x: rect.minX, y: y)); path.addLine(to: CGPoint(x: rect.maxX, y: y))
+            }
+        }
+        .stroke(Color.white.opacity(0.5), lineWidth: 0.75)
+    }
+}
+
+private extension CGRect {
+    func scaled(_ factor: CGFloat) -> CGRect {
+        CGRect(x: minX * factor, y: minY * factor, width: width * factor, height: height * factor)
     }
 }

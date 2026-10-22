@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// What format an image preset writes.
@@ -31,6 +32,90 @@ public enum PresetResize: Hashable, Codable, Sendable {
     }
 }
 
+/// A width to height ratio, like 16:9.
+public struct AspectRatio: Hashable, Codable, Sendable {
+    public var width: Int
+    public var height: Int
+
+    public init(_ width: Int, _ height: Int) {
+        self.width = width
+        self.height = height
+    }
+
+    public var label: String { "\(width):\(height)" }
+    public static let common: [AspectRatio] = [.init(1, 1), .init(4, 5), .init(4, 3), .init(3, 2), .init(16, 9), .init(9, 16)]
+}
+
+/// How cropped images are saved.
+public struct CropOptions: Hashable, Sendable {
+    /// Replace each original in place; the original goes to the Trash first.
+    public var overwrite = false
+    /// Save lossy formats at `compressedQuality` instead of near-lossless. Formats never change, so overwriting works.
+    public var compress = false
+
+    public static let compressedQuality = 0.72
+    public static let defaultQuality = 0.92
+
+    public init(overwrite: Bool = false, compress: Bool = false) {
+        self.overwrite = overwrite
+        self.compress = compress
+    }
+
+    public var quality: Double { compress ? Self.compressedQuality : Self.defaultQuality }
+}
+
+/// Cuts pixels off each edge, then optionally crops the rest to an aspect ratio around the centre.
+/// The same numbers apply to every image in a batch.
+public struct ImageCrop: Hashable, Codable, Sendable {
+    public var top = 0
+    public var right = 0
+    public var bottom = 0
+    public var left = 0
+    public var aspect: AspectRatio?
+
+    public init(top: Int = 0, right: Int = 0, bottom: Int = 0, left: Int = 0, aspect: AspectRatio? = nil) {
+        self.top = top
+        self.right = right
+        self.bottom = bottom
+        self.left = left
+        self.aspect = aspect
+    }
+
+    public var isEmpty: Bool { top == 0 && right == 0 && bottom == 0 && left == 0 && aspect == nil }
+
+    /// The part to keep, in pixels with the origin top left, or nil when the image is too small for this crop.
+    public func rect(in size: CGSize) -> CGRect? {
+        var rect = CGRect(x: CGFloat(left), y: CGFloat(top),
+                          width: size.width - CGFloat(left + right), height: size.height - CGFloat(top + bottom))
+        guard rect.width >= 1, rect.height >= 1 else { return nil }
+        if let aspect, aspect.width > 0, aspect.height > 0 {
+            let ratio = CGFloat(aspect.width) / CGFloat(aspect.height)
+            if rect.width / rect.height > ratio {
+                let width = (rect.height * ratio).rounded()
+                rect.origin.x += ((rect.width - width) / 2).rounded(.down)
+                rect.size.width = width
+            } else {
+                let height = (rect.width / ratio).rounded()
+                rect.origin.y += ((rect.height - height) / 2).rounded(.down)
+                rect.size.height = height
+            }
+        }
+        return rect.integral
+    }
+
+    public var summary: String {
+        var parts: [String] = []
+        let edges = [("top", top), ("right", right), ("bottom", bottom), ("left", left)].filter { $0.1 > 0 }
+        if edges.count == 4, Set([top, right, bottom, left]).count == 1 {
+            parts.append("trim \(top) px all round")
+        } else if !edges.isEmpty {
+            parts.append("trim " + edges.map { "\($0.0) \($0.1)" }.joined(separator: ", ") + " px")
+        }
+        if let aspect { parts.append("crop \(aspect.label)") }
+        return parts.isEmpty ? "no crop" : parts.joined(separator: " · ")
+    }
+}
+
 public struct ImagePreset: Hashable, Codable, Sendable, Identifiable {
     public var id: String
     public var name: String
@@ -38,13 +123,28 @@ public struct ImagePreset: Hashable, Codable, Sendable, Identifiable {
     public var resize: PresetResize
     /// 0...1. Ignored by lossless formats.
     public var quality: Double
+    /// Applied before resizing.
+    public var crop: ImageCrop
 
-    public init(id: String = Presets.newID(), name: String, format: PresetImageFormat, resize: PresetResize, quality: Double) {
+    public init(id: String = Presets.newID(), name: String, format: PresetImageFormat, resize: PresetResize, quality: Double,
+                crop: ImageCrop = ImageCrop()) {
         self.id = id
         self.name = name
         self.format = format
         self.resize = resize
         self.quality = quality
+        self.crop = crop
+    }
+
+    /// Presets saved before cropping existed have no crop key.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        format = try c.decode(PresetImageFormat.self, forKey: .format)
+        resize = try c.decode(PresetResize.self, forKey: .resize)
+        quality = try c.decode(Double.self, forKey: .quality)
+        crop = try c.decodeIfPresent(ImageCrop.self, forKey: .crop) ?? ImageCrop()
     }
 
     public var writesLossless: Bool {
@@ -54,9 +154,10 @@ public struct ImagePreset: Hashable, Codable, Sendable, Identifiable {
 
     public var summary: String {
         var parts: [String] = []
+        if !crop.isEmpty { parts.append(crop.summary) }
         if format != .original { parts.append(format.label) }
         switch resize {
-        case .none: parts.append("same size")
+        case .none: if crop.isEmpty { parts.append("same size") }
         case .longEdge(let px): parts.append("max \(px) px")
         case .percent(let p): parts.append("\(p)%")
         }

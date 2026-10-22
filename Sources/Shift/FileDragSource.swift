@@ -71,21 +71,22 @@ final class DragSourceView: NSView, NSDraggingSource {
     }
 }
 
-/// QuickLook thumbnails, cached so drag images appear instantly.
+/// QuickLook thumbnails, cached per size so drag images appear instantly and a small thumbnail never stands in for a big one.
 @MainActor
 final class ThumbnailCache {
     static let shared = ThumbnailCache()
-    private var images: [URL: NSImage] = [:]
+    private var images: [URL: [CGFloat: NSImage]] = [:]
 
-    func cached(_ url: URL) -> NSImage? { images[url] }
+    /// The largest thumbnail made so far, for drag images.
+    func cached(_ url: URL) -> NSImage? { images[url]?.max { $0.key < $1.key }?.value }
 
     func thumbnail(for url: URL, size: CGFloat) async -> NSImage {
-        if let image = images[url] { return image }
+        if let hit = images[url]?.filter({ $0.key >= size }).min(by: { $0.key < $1.key })?.value { return hit }
         let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: size, height: size),
                                                    scale: NSScreen.main?.backingScaleFactor ?? 2, representationTypes: .thumbnail)
         let image = (try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request))?.nsImage
             ?? NSWorkspace.shared.icon(forFile: url.path)
-        images[url] = image
+        images[url, default: [:]][size] = image
         return image
     }
 }

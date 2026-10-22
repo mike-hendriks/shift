@@ -51,6 +51,7 @@ public func imagePixelSize(_ url: URL) -> CGSize? {
     return orientation >= 5 ? CGSize(width: height, height: width) : CGSize(width: width, height: height)
 }
 
+/// Read fresh from disk: URL resource values are cached per URL, which goes stale once a file is replaced in place.
 public func fileSize(_ url: URL) -> Int64 {
-    Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+    ((try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? NSNumber)?.int64Value ?? 0
 }

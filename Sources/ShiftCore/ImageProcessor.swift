@@ -11,19 +11,16 @@ struct PreparedImage {
 }
 
 enum ImageProcessor {
-    /// Decodes, orients and optionally downsizes an image. Never upscales.
-    static func load(_ url: URL, resize: ResizeMode? = nil) throws -> PreparedImage {
+    /// Decodes, orients, optionally crops and downsizes an image. Never upscales.
+    static func load(_ url: URL, crop: ImageCrop = ImageCrop(), resize: ResizeMode? = nil) throws -> PreparedImage {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let size = imagePixelSize(url) else {
             throw ShiftError.unreadable(url)
         }
+        if !crop.isEmpty { return try loadCropped(source, size: size, crop: crop, resize: resize, url: url) }
+
         let longEdge = Int(max(size.width, size.height))
-        var target = longEdge
-        switch resize {
-        case .percent(let p): target = longEdge * p / 100
-        case .longEdge(let px): target = min(longEdge, px)
-        case nil: break
-        }
+        let target = targetLongEdge(longEdge, resize)
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
@@ -36,9 +33,39 @@ enum ImageProcessor {
         return try toSRGB(image)
     }
 
+    private static func targetLongEdge(_ longEdge: Int, _ resize: ResizeMode?) -> Int {
+        switch resize {
+        case .percent(let p): return longEdge * p / 100
+        case .longEdge(let px): return min(longEdge, px)
+        case nil: return longEdge
+        }
+    }
+
+    /// Crops at full resolution, so pixel amounts match the original, then scales the rest.
+    private static func loadCropped(_ source: CGImageSource, size: CGSize, crop: ImageCrop, resize: ResizeMode?,
+                                    url: URL) throws -> PreparedImage {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: Int(max(size.width, size.height)),
+        ]
+        guard let full = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            throw ShiftError.unreadable(url)
+        }
+        guard let rect = crop.rect(in: CGSize(width: full.width, height: full.height)), let cropped = full.cropping(to: rect) else {
+            throw ShiftError.failed("\(url.lastPathComponent) is \(full.width)×\(full.height) px, too small for \(crop.summary)")
+        }
+        let longEdge = max(cropped.width, cropped.height)
+        let scale = CGFloat(targetLongEdge(longEdge, resize)) / CGFloat(longEdge)
+        let target = CGSize(width: max(1, (CGFloat(cropped.width) * scale).rounded()),
+                            height: max(1, (CGFloat(cropped.height) * scale).rounded()))
+        return try toSRGB(cropped, size: target)
+    }
+
     /// Redraws into an 8-bit sRGB bitmap so colours look the same in every browser, and checks for real transparency.
-    private static func toSRGB(_ image: CGImage) throws -> PreparedImage {
-        let width = image.width, height = image.height
+    private static func toSRGB(_ image: CGImage, size: CGSize? = nil) throws -> PreparedImage {
+        let width = Int(size?.width ?? CGFloat(image.width)), height = Int(size?.height ?? CGFloat(image.height))
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
               let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
                                   space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {

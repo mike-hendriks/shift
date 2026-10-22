@@ -483,6 +483,12 @@ struct ImagePresetEditor: View {
                         .font(.callout).foregroundStyle(.secondary)
                 }
             }
+            Section("Crop") {
+                CropFields(crop: $preset.crop)
+                Text(preset.crop.isEmpty ? "No crop. Cropping happens before resizing, in pixels of the original."
+                     : "\(preset.crop.summary.prefix(1).uppercased() + preset.crop.summary.dropFirst()), before resizing.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
             Section("Size") {
                 Picker("Resize", selection: sizeMode) {
                     Text("Keep size").tag(SizeMode.none)

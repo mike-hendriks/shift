@@ -29,7 +29,9 @@ Open Settings from the menu bar icon (⌘,).
   the highlighted tile and runs on Return. Actions that would not change a file stay hidden on their own: To JPG for a
   JPG, a resize preset for images that are already small enough, One PDF for a single image.
 - **Presets**: your own compression and resize options.
-  - Images: format (keep, smallest, or a fixed one), longest side or scale, quality.
+  - Images: crop (trim edges, ratio), format (keep, smallest, or a fixed one), longest side or scale, quality.
+    Crop… in the bar saves new files or overwrites the originals (they go to the Trash first), can compress in
+    the same go, and has a Save as Preset button for numbers you use often.
   - Video: resolution, quality, keep or drop audio. Always H.264 MP4.
   - PDF: image quality and resolution.
 
@@ -40,7 +42,7 @@ delete them. Settings live in the `men.stuur.shift` defaults domain, shared with
 
 | Files | Actions |
 | --- | --- |
-| Images | Presets: **Web preset** (WebP, max 2000 px long edge, quality 78), Compress, 50%, max 1920 / 1280 / 640 px. Convert to JPG/PNG/WebP (AVIF, HEIC, TIFF in Settings), combine into one PDF, Markdown via OCR. Always sRGB, metadata stripped |
+| Images | Presets: **Web preset** (WebP, max 2000 px long edge, quality 78), Compress, 50%, max 1920 / 1280 / 640 px. Convert to JPG/PNG/WebP (AVIF, HEIC, TIFF in Settings), **Crop…** (drag the edges on a large preview or type exact pixels, optionally crop to a ratio; the same crop for every image), combine into one PDF, Markdown via OCR. Always sRGB, metadata stripped |
 | Text (md, txt, docx, rtf, html, code) | PDF (A4, page numbers, Markdown rendered), Markdown (headings, lists, links, tables), plain text |
 | PDF | Compress preset (images to JPEG at 144 dpi), Markdown (paragraphs rebuilt from line positions), pages to PNG or JPG |
 | Video | Presets Web 1080p / 720p (H.264 MP4, capped bitrate), MP4, extract audio, Markdown transcript |
@@ -109,6 +111,7 @@ The same engine is available from the terminal:
 dist/shift-cli suggest photo.heic notes.md
 dist/shift-cli web --out ~/Desktop/web *.jpg        # "web" is short for preset-web
 dist/shift-cli preset-video-720 clip.mov            # any preset id shown by suggest
+dist/shift-cli crop --bottom 200 *.png              # also --top, --left, --right, --aspect 16:9, --compress, --overwrite
 ```
 
 ## Layout

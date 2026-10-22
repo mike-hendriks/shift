@@ -9,6 +9,7 @@ func usage() -> Never {
     Usage:
       shift-cli suggest <files...>
       shift-cli <action-id> [--out <dir>] <files...>
+      shift-cli crop [--top N] [--right N] [--bottom N] [--left N] [--aspect W:H] [--compress] [--overwrite] [--out <dir>] <files...>
 
     Run `shift-cli suggest <file>` to see the action ids for a file.
     """)
@@ -25,6 +26,22 @@ if let i = args.firstIndex(of: "--out"), i + 1 < args.count {
     outputDirectory = URL(fileURLWithPath: args[i + 1])
     args.removeSubrange(i...(i + 1))
 }
+// Crop amounts, in pixels of the original image.
+var crop = ImageCrop()
+for (flag, keyPath) in [("--top", \ImageCrop.top), ("--right", \.right), ("--bottom", \.bottom), ("--left", \.left)] {
+    if let i = args.firstIndex(of: flag), i + 1 < args.count, let value = Int(args[i + 1]) {
+        crop[keyPath: keyPath] = value
+        args.removeSubrange(i...(i + 1))
+    }
+}
+if let i = args.firstIndex(of: "--aspect"), i + 1 < args.count {
+    let parts = args[i + 1].split(separator: ":").compactMap { Int($0) }
+    if parts.count == 2 { crop.aspect = AspectRatio(parts[0], parts[1]) }
+    args.removeSubrange(i...(i + 1))
+}
+var cropOptions = CropOptions()
+if let i = args.firstIndex(of: "--compress") { cropOptions.compress = true; args.remove(at: i) }
+if let i = args.firstIndex(of: "--overwrite") { cropOptions.overwrite = true; args.remove(at: i) }
 let files = args.map { URL(fileURLWithPath: $0).standardizedFileURL }
 guard !files.isEmpty else { usage() }
 
@@ -42,7 +59,7 @@ if command == "suggest" {
     exit(0)
 }
 
-guard let action = settings.action(id: command) else {
+guard let action = command == "crop" ? ShiftAction.crop(crop, cropOptions) : settings.action(id: command) else {
     print("Unknown action: \(command)")
     usage()
 }

@@ -56,11 +56,11 @@ public struct ShiftSettings: Codable, Equatable, Sendable {
     )
 
     /// Off until you turn them on: rarely needed formats.
-    static let hiddenByDefault: Set<String> = ["convert-avif", "convert-heic", "convert-tiff"]
+    static let hiddenByDefault: Set<String> = ["convert-avif", "convert-heic", "convert-tiff", "preset-half"]
 
     static let defaultLayout: [String: [ActionEntry]] = {
         let order: [FileKind: [String]] = [
-            .image: ["preset-web", "convert-jpeg", "convert-png", "convert-webp", "preset-compress", "preset-half",
+            .image: ["preset-web", "convert-jpeg", "convert-png", "convert-webp", "preset-compress", "crop", "preset-half",
                      "preset-1920", "preset-1280", "preset-640", "images-to-pdf", "markdown-image",
                      "convert-avif", "convert-heic", "convert-tiff"],
             .document: ["text-to-pdf", "markdown-document", "text-to-txt"],

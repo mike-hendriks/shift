@@ -21,10 +21,10 @@ public struct ShiftResult: Sendable, Identifiable {
     public let outputBytes: Int64
     public let note: String?
 
-    init(sources: [URL], output: URL, note: String? = nil) {
+    init(sources: [URL], output: URL, note: String? = nil, sourceBytes: Int64? = nil) {
         self.sources = sources
         self.output = output
-        self.sourceBytes = sources.reduce(0) { $0 + fileSize($1) }
+        self.sourceBytes = sourceBytes ?? sources.reduce(0) { $0 + fileSize($1) }
         self.outputBytes = fileSize(output)
         self.note = note
     }
@@ -124,7 +124,7 @@ public enum Processor {
         let file = files[0]
         switch action {
         case .imagePreset(let preset):
-            let image = try ImageProcessor.load(file, resize: preset.resize.mode)
+            let image = try ImageProcessor.load(file, crop: preset.crop, resize: preset.resize.mode)
             let source = ImageFormat.of(file)
             let format: ImageFormat
             switch preset.format {
@@ -142,8 +142,24 @@ public enum Processor {
             let out = OutputNamer.url(for: file, suffix: Presets.slug(preset.name), ext: format.fileExtension, in: dir)
             try ImageProcessor.write(image, as: format, quality: preset.quality, to: out)
             // Pure compression must never make a file bigger.
-            if preset.resize == .none, format == source { return [keepSmaller(source: file, output: out)] }
+            if preset.resize == .none, preset.crop.isEmpty, format == source { return [keepSmaller(source: file, output: out)] }
             return [ShiftResult(sources: files, output: out)]
+
+        case .crop(let crop, let options):
+            let image = try ImageProcessor.load(file, crop: crop)
+            let source = ImageFormat.of(file)
+            let format = source ?? (image.isTransparent ? .png : .jpeg)
+            if options.overwrite, source != nil {
+                let originalBytes = fileSize(file)
+                try replaceInPlace(file) { temp in try ImageProcessor.write(image, as: format, quality: options.quality, to: temp) }
+                return [ShiftResult(sources: files, output: file, note: "Original replaced, previous version in the Trash",
+                                    sourceBytes: originalBytes)]
+            }
+            let out = OutputNamer.url(for: file, suffix: "cropped", ext: format.fileExtension, in: dir)
+            try ImageProcessor.write(image, as: format, quality: options.quality, to: out)
+            // Formats Shift cannot write back (GIF, BMP, PSD...) become a new file even when overwriting was asked.
+            let note = options.overwrite ? "\(file.pathExtension.uppercased()) cannot be written back, saved as a new file" : nil
+            return [ShiftResult(sources: files, output: out, note: note)]
 
         case .convertImage(let format):
             let image = try ImageProcessor.load(file)
@@ -204,6 +220,28 @@ public enum Processor {
             try await MediaProcessor.export(file, preset: AVAssetExportPresetAppleM4A, fileType: .m4a, to: out)
             return [ShiftResult(sources: files, output: out)]
         }
+    }
+
+    /// Writes the new version next to the original, moves the original to the Trash, then puts the new one in its place.
+    /// If the Trash is not available nothing is replaced, so an original is never lost.
+    private static func replaceInPlace(_ file: URL, write: (URL) throws -> Void) throws {
+        let fm = FileManager.default
+        let temp = file.deletingLastPathComponent()
+            .appendingPathComponent(".\(file.deletingPathExtension().lastPathComponent)-shift-\(UUID().uuidString.prefix(8))")
+            .appendingPathExtension(file.pathExtension)
+        do {
+            try write(temp)
+        } catch {
+            try? fm.removeItem(at: temp)
+            throw error
+        }
+        do {
+            try fm.trashItem(at: file, resultingItemURL: nil)
+        } catch {
+            try? fm.removeItem(at: temp)
+            throw ShiftError.failed("Could not move \(file.lastPathComponent) to the Trash, so it was left untouched")
+        }
+        try fm.moveItem(at: temp, to: file)
     }
 
     /// If compression made the file bigger, ship the original instead.

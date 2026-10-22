@@ -35,6 +35,43 @@ enum DebugSnapshot {
             drop.model.isDragging = false
             drop.model.dropSpot = nil
 
+            // The Crop… form, as it opens when you pick the Crop tile.
+            drop.perform(.crop(ImageCrop(), CropOptions()), on: files)
+            try? await Task.sleep(for: .milliseconds(1500))
+            capture(title: "crop", to: dir)
+
+            // Drag the bottom edge of the crop up with real mouse events, as a user would.
+            drop.model.crop = ImageCrop(top: 40, right: 60, bottom: 200, left: 60)
+            drop.model.cropOptions = CropOptions(overwrite: true, compress: true)
+            try? await Task.sleep(for: .milliseconds(800))
+            capture(title: "crop-set", to: dir)
+            if let panel = NSApp.windows.first(where: { $0.isVisible && $0 is FloatingPanel && $0.isKeyWindow || ($0 is FloatingPanel && $0.frame.width > 600) }),
+               let first = files.first, let size = imagePixelSize(first) {
+                let maxWidth = max(240, drop.model.width - 44 - 28 - 460)
+                let scale = min(420 / size.height, maxWidth / size.width)
+                let height = panel.contentView!.bounds.height
+                let x = 22 + size.width * scale / 2
+                let edgeY = 22 + (size.height - CGFloat(drop.model.crop.bottom)) * scale
+                let start = NSPoint(x: x, y: height - edgeY)
+                func mouse(_ type: NSEvent.EventType, _ point: NSPoint) {
+                    let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                   windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+                    NSApp.postEvent(event, atStart: false)
+                }
+                print("hit at bottom edge: \(panel.contentView?.hitTest(start).map { String(describing: type(of: $0)) } ?? "nil")")
+                let before = drop.model.crop.bottom
+                mouse(.leftMouseDown, start)
+                try? await Task.sleep(for: .milliseconds(50))
+                for step in 1...7 {
+                    try? await Task.sleep(for: .milliseconds(30))
+                    mouse(.leftMouseDragged, NSPoint(x: start.x, y: start.y + CGFloat(step) * 5))
+                }
+                mouse(.leftMouseUp, NSPoint(x: start.x, y: start.y + 35))
+                try? await Task.sleep(for: .milliseconds(500))
+                print("drag bottom edge up 35 pt at scale \(scale): bottom \(before) -> \(drop.model.crop.bottom) px")
+                capture(title: "crop-dragged", to: dir)
+            }
+
             let report = await Processor.run(.imagePreset(Presets.defaultImage[0]), on: files.filter { FileKind.of($0) == .image },
                                              outputDirectory: FileManager.default.temporaryDirectory.appendingPathComponent("shift-snapshot"))
             store.add(report.results)

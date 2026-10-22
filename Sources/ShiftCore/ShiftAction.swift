@@ -48,6 +48,8 @@ public enum ResizeMode: Hashable, Sendable {
 /// Compression and resizing live in presets, which you edit in Settings.
 public enum ShiftAction: Hashable, Sendable, Identifiable {
     case imagePreset(ImagePreset)
+    /// Crop every image the same way; the app asks for the numbers when you pick it.
+    case crop(ImageCrop, CropOptions)
     case convertImage(ImageFormat)
     case imagesToPDF
     case textToPDF
@@ -66,6 +68,7 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
         case .imagePreset(let p): return "preset-\(p.id)"
         case .videoPreset(let p): return "preset-\(p.id)"
         case .pdfPreset(let p): return "preset-\(p.id)"
+        case .crop: return "crop"
         case .convertImage(let f): return "convert-\(f.rawValue)"
         case .imagesToPDF: return "images-to-pdf"
         case .textToPDF: return "text-to-pdf"
@@ -81,7 +84,7 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
     /// Actions that exist regardless of presets, per kind.
     public static func builtIns(for kind: FileKind) -> [ShiftAction] {
         switch kind {
-        case .image: return ImageFormat.allCases.map { .convertImage($0) } + [.imagesToPDF, .toMarkdown(.image)]
+        case .image: return [.crop(ImageCrop(), CropOptions())] + ImageFormat.allCases.map { .convertImage($0) } + [.imagesToPDF, .toMarkdown(.image)]
         case .document: return [.textToPDF, .toMarkdown(.document), .textToPlain]
         case .pdf: return [.toMarkdown(.pdf), .pdfToImages(.png), .pdfToImages(.jpeg)]
         case .video: return [.videoToMP4, .extractAudio, .toMarkdown(.video)]
@@ -92,7 +95,7 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
 
     public var kind: FileKind {
         switch self {
-        case .imagePreset, .convertImage, .imagesToPDF: return .image
+        case .imagePreset, .crop, .convertImage, .imagesToPDF: return .image
         case .textToPDF, .textToPlain: return .document
         case .pdfPreset, .pdfToImages: return .pdf
         case .videoPreset, .videoToMP4, .extractAudio: return .video
@@ -116,6 +119,7 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
         case .imagePreset(let p): return p.name
         case .videoPreset(let p): return p.name
         case .pdfPreset(let p): return p.name
+        case .crop: return "Crop…"
         case .convertImage(let f): return "To \(f.displayName)"
         case .imagesToPDF: return "One PDF"
         case .textToPDF: return "To PDF"
@@ -133,6 +137,7 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
         case .imagePreset(let p): return p.summary
         case .videoPreset(let p): return p.summary
         case .pdfPreset(let p): return p.summary
+        case .crop: return "Trim edges or crop to a ratio, for all images"
         case .convertImage(.webp): return "Small and sharp, works across the web"
         case .convertImage(.avif): return "Even smaller than WebP"
         case .convertImage(.jpeg): return "Opens everywhere"
@@ -157,12 +162,14 @@ public enum ShiftAction: Hashable, Sendable, Identifiable {
     public var symbol: String {
         switch self {
         case .imagePreset(let p):
+            if !p.crop.isEmpty && p.resize == .none { return "crop" }
             switch (p.format, p.resize) {
             case (.format(.webp), _), (.format(.avif), _): return "globe"
             case (_, .none): return "arrow.down.to.line.compact"
             default: return "arrow.down.right.and.arrow.up.left"
             }
         case .pdfPreset: return "arrow.down.to.line.compact"
+        case .crop: return "crop"
         case .convertImage: return "arrow.triangle.2.circlepath"
         case .imagesToPDF, .textToPDF: return "doc.richtext"
         case .textToPlain: return "text.alignleft"
