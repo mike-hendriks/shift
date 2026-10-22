@@ -416,7 +416,7 @@ const endIcon = add(`<div id="endicon" class="appicon">${shiftFill(98)}</div>`, 
 const endWord = add(`<div id="endword">${[...'Shift'].map(c => `<span class="ch" style="display:inline-block">${c}</span>`).join('')}</div>`, s6);
 const endTag = add('<div id="endtag"><span>Drag.</span> <span>Hold Shift.</span> <span class="done">Done.</span></div>', s6);
 const cta = add(`<div id="cta"><div class="btn">${appleLogo.replace('width="15" height="18"', 'width="24" height="28"')}Free for macOS</div><div class="url">github.com/mike-hendriks/shift</div></div>`, s6);
-const endFoot = add('<div id="endfoot"><span>macOS 15 or later · Apple Silicon</span><span>Made by <b>Stuurmen</b></span></div>', s6);
+const endFoot = add('<div id="endfoot"><span>macOS 15 or later · Apple Silicon</span></div>', s6);
 
 // overlays
 const vignette = add('<div id="vignette"></div>');
