@@ -22,6 +22,36 @@ enum DebugSnapshot {
                     try? await Task.sleep(for: .milliseconds(step == .welcome ? 4000 : 2500))
                     if let window = onboarding.visibleWindow { await screenCapture(window, title: "onboarding-\(step.rawValue)", to: dir) }
                 }
+                // Click the location cards like a user would and check what gets saved.
+                onboarding.show(step: .location)
+                try? await Task.sleep(for: .milliseconds(1500))
+                if let window = onboarding.visibleWindow, let content = window.contentView {
+                    let store = onboarding.model.settings
+                    func click(_ x: CGFloat, _ yFromTop: CGFloat) async {
+                        let point = NSPoint(x: x, y: content.bounds.height - yFromTop)
+                        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                            let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                           windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+                            NSApp.postEvent(event, atStart: false)
+                            try? await Task.sleep(for: .milliseconds(60))
+                        }
+                        try? await Task.sleep(for: .milliseconds(700))
+                    }
+                    // Start from Downloads/Shift so both directions are tested, and make the window key so clicks land.
+                    store.settings.saveNextToOriginal = false
+                    store.settings.outputDirectory = nil
+                    NSApp.activate()
+                    window.makeKeyAndOrderFront(nil)
+                    await click(940 / 2, 120) // a click on the title, in case the first one only activates the window
+                    print("location start: nextToOriginal=\(store.settings.saveNextToOriginal) folder=\(store.settings.outputDirectory ?? "Downloads/Shift")")
+                    await click(470, 250)
+                    print("after clicking Next to the original: nextToOriginal=\(store.settings.saveNextToOriginal)")
+                    await screenCapture(window, title: "location-next", to: dir)
+                    await click(178, 250)
+                    print("after clicking Downloads/Shift: nextToOriginal=\(store.settings.saveNextToOriginal) folder=\(store.settings.outputDirectory ?? "Downloads/Shift")")
+                    await screenCapture(window, title: "location-downloads", to: dir)
+                }
+
                 // The tutorial once the bar has shown and the demo photo went through the web preset.
                 onboarding.show(step: .tryIt)
                 try? await Task.sleep(for: .milliseconds(1500))

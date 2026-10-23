@@ -192,7 +192,7 @@ struct OnboardingView: View {
                 case .welcome: WelcomeStep(model: model)
                 case .tryIt: TryItStep(model: model)
                 case .tricks: TricksStep()
-                case .location: LocationStep(model: model)
+                case .location: LocationStep(model: model, settings: model.settings)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -419,12 +419,14 @@ private struct TricksStep: View {
 
 private struct LocationStep: View {
     @ObservedObject var model: OnboardingModel
+    /// Observed directly: the choice lives in settings, and the model alone does not redraw this view when it changes.
+    @ObservedObject var settings: SettingsStore
 
     private enum Choice { case downloads, nextToOriginal, custom }
 
     private var choice: Choice {
-        if model.settings.settings.saveNextToOriginal { return .nextToOriginal }
-        return model.settings.settings.outputDirectory == nil ? .downloads : .custom
+        if settings.settings.saveNextToOriginal { return .nextToOriginal }
+        return settings.settings.outputDirectory == nil ? .downloads : .custom
     }
 
     var body: some View {
@@ -434,16 +436,16 @@ private struct LocationStep: View {
             HStack(spacing: 16) {
                 option(.downloads, symbol: "arrow.down.circle", title: "Downloads/Shift",
                        detail: "One folder for everything Shift makes.") {
-                    model.settings.settings.saveNextToOriginal = false
-                    model.settings.settings.outputDirectory = nil
+                    settings.settings.saveNextToOriginal = false
+                    settings.settings.outputDirectory = nil
                 }
                 option(.nextToOriginal, symbol: "doc.on.doc", title: "Next to the original",
                        detail: "Results land beside the file you dropped.") {
-                    model.settings.settings.saveNextToOriginal = true
+                    settings.settings.saveNextToOriginal = true
                 }
                 option(.custom, symbol: "folder.badge.gearshape",
-                       title: choice == .custom ? (model.settings.settings.outputURL.lastPathComponent) : "Choose a folder…",
-                       detail: choice == .custom ? model.settings.settings.outputURL.path(percentEncoded: false) : "Pick any folder you like.") {
+                       title: choice == .custom ? (settings.settings.outputURL.lastPathComponent) : "Choose a folder…",
+                       detail: choice == .custom ? settings.settings.outputURL.path(percentEncoded: false) : "Pick any folder you like.") {
                     chooseFolder()
                 }
             }
@@ -490,8 +492,8 @@ private struct LocationStep: View {
         panel.canCreateDirectories = true
         panel.prompt = "Choose Folder"
         if panel.runModal() == .OK, let url = panel.url {
-            model.settings.settings.outputDirectory = url.path
-            model.settings.settings.saveNextToOriginal = false
+            settings.settings.outputDirectory = url.path
+            settings.settings.saveNextToOriginal = false
         }
     }
 }
